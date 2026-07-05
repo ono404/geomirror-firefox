@@ -109,7 +109,7 @@ Technical sequence:
 
 A store listing is planned. Until then, use the unpacked extension.
 
-### Option C — Firefox (development / temporary load)
+### Option C — Firefox temporary load for development
 
 Firefox uses a separate manifest because it does not support MV3 `background.service_worker` (it uses `background.scripts` / event pages) and declares `<all_urls>` host permission explicitly so the `Accept-Language` `declarativeNetRequest` rule has host access for outgoing requests on arbitrary sites.
 
@@ -129,6 +129,23 @@ Load it in Firefox:
 4. Choose `dist/firefox/manifest.json`.
 
 Note: temporary add-ons disappear when Firefox restarts. This is the recommended path for development; signing for a permanent install is a separate step.
+
+### Option D — Firefox signed XPI for long-term install
+
+A signed unlisted Firefox package can be installed permanently:
+
+```text
+web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi
+```
+
+You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
+
+Future bug fixes have two layers:
+
+- Commit and push the source change to GitHub so the backup repository is current.
+- If the fixed version should replace the permanently installed add-on, bump the extension version, rebuild `dist/firefox`, sign a new `.xpi` with `web-ext sign`, install the new `.xpi`, and optionally commit that new package under `web-ext-artifacts/`.
+
+The Mozilla API key and secret used for signing must stay outside git.
 
 ## Verify it works
 
@@ -233,7 +250,10 @@ geomirror/
 │   └── run-tests.js
 ├── tools/
 │   ├── gen-icons.py
-│   └── build-firefox.mjs      # Builds dist/firefox/ for temporary load
+│   ├── build-firefox.mjs      # Builds dist/firefox/ for temporary load and signing
+│   └── serve-firefox-verify.mjs
+├── web-ext-artifacts/
+│   └── *.xpi                  # Signed Firefox packages kept as private release artifacts
 └── icons/
 ```
 

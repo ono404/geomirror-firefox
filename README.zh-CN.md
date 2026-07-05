@@ -157,6 +157,47 @@ flowchart TD
 
 计划后续上架。在此之前请使用未打包扩展。
 
+### 方式 C：Firefox 临时加载（开发/测试）
+
+Firefox 使用单独的 manifest，因为 Firefox 版使用 `background.scripts` / event page，并且为了让 `Accept-Language` 请求头在普通网站上生效，Firefox 包会显式声明 `<all_urls>` host permission。
+
+构建 Firefox 包：
+
+```bash
+node tools/build-firefox.mjs
+```
+
+然后在 Firefox 中打开：
+
+```text
+about:debugging#/runtime/this-firefox
+```
+
+点击 **Load Temporary Add-on / 临时载入附加组件**，选择：
+
+```text
+dist/firefox/manifest.json
+```
+
+注意：临时加载的扩展在 Firefox 重启后会消失，适合开发和测试。
+
+### 方式 D：Firefox 签名 XPI（长期安装）
+
+已经签名的 Firefox 安装包位于：
+
+```text
+web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi
+```
+
+可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
+
+后续如果修 bug，需要分清两件事：
+
+- GitHub 保存的是源码和备份历史，修完代码后需要 commit 并 push。
+- Firefox 里长期安装的插件不会因为源码变了自动更新；如果要用修复后的长期安装版，需要提升版本号、重新构建、重新签名，生成新的 `.xpi` 再安装。
+
+Mozilla 签名用的 API key 和 secret 不能提交到 git。
+
 ## 验证效果
 
 打开检测页面，检查这些值：
@@ -240,6 +281,7 @@ navigator.geolocation.getCurrentPosition(console.log, console.error)
 ```text
 geomirror/
 ├── manifest.json
+├── manifest.firefox.json
 ├── background.js
 ├── content-bridge.js
 ├── content-inject.js
@@ -255,6 +297,11 @@ geomirror/
 ├── popup.js
 ├── test/
 │   └── run-tests.js
+├── tools/
+│   ├── build-firefox.mjs
+│   └── serve-firefox-verify.mjs
+├── web-ext-artifacts/
+│   └── *.xpi
 └── icons/
 ```
 
@@ -269,6 +316,8 @@ node --check lib/providers.js
 node --check lib/locale.js
 node --check lib/timezone.js
 node --check popup.js
+node --check tools/build-firefox.mjs
+node --check tools/serve-firefox-verify.mjs
 ```
 
 改动后，在 `chrome://extensions` 点击扩展卡片上的刷新图标重新加载。

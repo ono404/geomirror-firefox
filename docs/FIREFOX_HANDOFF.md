@@ -3,6 +3,31 @@
 > 这份文档是给下一个 Codex 页面看的，不是直接给 TRAE 的最终开发指令。  
 > 新 Codex 的职责是先理解项目和用户目标，再决定如何把任务交给 TRAE。不要把本文当成不可变技术方案。
 
+## 当前权威状态（2026-07-05）
+
+Firefox 适配已经完成第一版，不再处于“准备让 TRAE 开始写代码”的初始阶段。
+
+当前状态：
+
+- Firefox 临时扩展可以加载。
+- popup 可以打开并刷新出口 IP。
+- geolocation、timezone、language、Intl locale、outgoing `Accept-Language` 已在本地 Firefox 验证页通过主要验收。
+- 关闭单个开关时，对应 spoof 行为可以在已打开页面回退。
+- `web-ext lint --source-dir dist/firefox` 通过。
+- 已生成签名 XPI：`web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi`。
+- 私人备份仓库：`https://github.com/ono404/geomirror-firefox.git`。
+- 当前已推送提交：
+  - `745d239 feat: add Firefox extension build`
+  - `5c5cf5e chore: add signed Firefox xpi`
+
+后续如果是修 bug 或发新版本，优先阅读：
+
+```text
+docs/FIREFOX_BUGFIX_HANDOFF.md
+```
+
+本文下面保留了最初 Firefox 适配阶段的背景、约束和验收清单，仍可作为理解项目的参考，但不要把其中“下一步先让 TRAE 做基础适配”的内容当成当前状态。
+
 ## 用户背景
 
 用户没有编程背景。用户关心的是最终能不能在 Firefox 上正常使用这个浏览器插件，而不是具体代码实现细节。
@@ -66,13 +91,13 @@ https://github.com/Azurboy/geomirror.git
 - 使用 `chrome.declarativeNetRequest` 修改 outgoing `Accept-Language`。
 - 已有 popup、README、隐私说明和测试。
 
-第一次检查时的验证结果：
+第一次检查时的历史验证结果：
 
 ```bash
 node test/run-tests.js
 ```
 
-结果：7 个测试通过。
+结果：当时 7 个测试通过。当前测试数量已经增加，后续应以 `node test/run-tests.js` 的实时结果为准。
 
 以下语法检查也通过：
 
@@ -84,19 +109,19 @@ node --check popup.js
 node --check lib/providers.js
 ```
 
-当前 `main` 与 `origin/main` 对齐：
+初始接手时 `main` 与 `origin/main` 对齐：
 
 ```text
 7841649bbea6c07e91c41d5117dfe9379b0c8d6d
 ```
 
-但当前存在一个本地未提交改动：
+初始接手时存在一个本地未提交改动：
 
 ```text
 M lib/providers.js
 ```
 
-该改动的含义是：优先选择带 IANA timezone 的 provider 结果，同时保留无 timezone 的 fallback。后续不要误删、回滚或覆盖这个改动，除非用户明确要求。
+该改动的含义是：优先选择带 IANA timezone 的 provider 结果，同时保留无 timezone 的 fallback。该改动已经随 Firefox 适配一起提交；后续仍不要误删、回滚或覆盖这个行为，除非用户明确要求。
 
 ## 已知可行性结论
 
@@ -175,9 +200,11 @@ TRAE 的费用逻辑是按“任务次数”收费，不是传统 token 计费�
 - 每次完成后必须说明改了哪些文件、为什么改、怎么验证。
 - 如果 Firefox 平台 API 不支持某个方案，要停下来说明错误和备选方案，不要自行改成大范围重构。
 
-## 新 Codex 需要先做的事
+## 新 Codex 初始适配阶段需要先做的事（历史参考）
 
-新 Codex 开始后，不要直接让 TRAE 写代码。先做以下确认：
+这一节是 Firefox 适配开始前的工作流。当前项目已经完成第一版 Firefox 适配。后续修 bug 时，不要机械重复这一节，而应先读 `docs/FIREFOX_BUGFIX_HANDOFF.md`，再按 bug 复现和回归验证流程处理。
+
+初始适配阶段，新 Codex 开始后，不要直接让 TRAE 写代码。先做以下确认：
 
 1. 重新检查本地目录和 git 状态。
 
