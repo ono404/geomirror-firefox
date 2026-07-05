@@ -109,6 +109,27 @@ Technical sequence:
 
 A store listing is planned. Until then, use the unpacked extension.
 
+### Option C — Firefox (development / temporary load)
+
+Firefox uses a separate manifest because it does not support MV3 `background.service_worker` (it uses `background.scripts` / event pages) and declares `<all_urls>` host permission explicitly so the `Accept-Language` `declarativeNetRequest` rule has host access for outgoing requests on arbitrary sites.
+
+Build the Firefox package:
+
+```bash
+node tools/build-firefox.mjs
+```
+
+This produces `dist/firefox/`, copying `background.js`, content scripts, popup, `lib/`, `icons/`, `PRIVACY.md`, `README.md`, and writing `manifest.firefox.json` as `dist/firefox/manifest.json`. It uses only Node built-ins — no npm dependencies.
+
+Load it in Firefox:
+
+1. Open Firefox.
+2. Go to `about:debugging#/runtime/this-firefox`.
+3. Click **Load Temporary Add-on**.
+4. Choose `dist/firefox/manifest.json`.
+
+Note: temporary add-ons disappear when Firefox restarts. This is the recommended path for development; signing for a permanent install is a separate step.
+
 ## Verify it works
 
 Open a fingerprint/location test page and check these values:
@@ -147,6 +168,8 @@ Useful public checks:
 | `declarativeNetRequest` | Set the outgoing `Accept-Language` header without reading page traffic. |
 | `<all_urls>` content script | Patch browser APIs on normal web pages before page scripts run. |
 | `host_permissions` | Call the explicitly listed IP/geolocation/Overpass/reverse-geocode providers. |
+| `<all_urls>` host permission (Firefox package only) | Firefox `declarativeNetRequest.modifyHeaders` needs host permission on the request URL (and initiator for non-navigation requests) to rewrite `Accept-Language` on arbitrary outgoing requests. The Chrome / Edge manifest is kept unchanged; the Firefox package declares this host access explicitly. |
+| `locationInfo` data collection permission (Firefox package only) | Mozilla's built-in data consent taxonomy requires declaring location data transmission because GeoMirror contacts IP geolocation, Overpass, and reverse-geocoding services to resolve the visible exit IP and nearby coordinate. This is not telemetry or browsing-history collection. |
 
 ## If you do not want to install this extension
 
@@ -191,7 +214,8 @@ Project layout:
 
 ```
 geomirror/
-├── manifest.json
+├── manifest.json              # Chrome / Edge MV3 manifest
+├── manifest.firefox.json      # Firefox MV3 manifest (background.scripts + <all_urls>)
 ├── background.js
 ├── content-bridge.js
 ├── content-inject.js
@@ -207,6 +231,9 @@ geomirror/
 ├── popup.js
 ├── test/
 │   └── run-tests.js
+├── tools/
+│   ├── gen-icons.py
+│   └── build-firefox.mjs      # Builds dist/firefox/ for temporary load
 └── icons/
 ```
 
@@ -221,7 +248,25 @@ node --check lib/providers.js
 node --check lib/locale.js
 node --check lib/timezone.js
 node --check popup.js
+node --check tools/build-firefox.mjs
 ```
+
+Build the Firefox dev package:
+
+```bash
+node tools/build-firefox.mjs
+```
+
+Run the local Firefox verification page:
+
+```bash
+node tools/serve-firefox-verify.mjs
+```
+
+Open the printed `http://127.0.0.1:<port>/` URL in Firefox after loading the
+temporary add-on, then use **Run checks** to verify geolocation, timezone,
+language, Intl locale, and the outgoing `Accept-Language` header. If port 8765
+is already in use, the helper automatically tries the next free port.
 
 After changing files, reload the extension in `chrome://extensions`.
 

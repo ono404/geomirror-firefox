@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "GeoMirror",
+  "version": "1.1.0",
+  "description": "Mirror your visible IP into the browser: spoof geolocation, timezone and language so geolocation, Date timezone offset, navigator.language and the Accept-Language header all match your exit IP.",
+  "permissions": ["storage", "alarms", "declarativeNetRequest"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://reallyfreegeoip.org/*",
+    "https://ipwho.is/*",
+    "https://ipapi.co/*",
+    "https://ipinfo.io/*",
+    "https://overpass-api.de/*",
+    "https://overpass.kumi.systems/*",
+    "https://maps.mail.ru/osm/tools/overpass/*",
+    "https://api.bigdatacloud.net/*"
+  ],
+  "background": {
+    "scripts": [
+      "lib/geo.js",
+      "lib/providers.js",
+      "lib/locale.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["lib/timezone.js", "content-inject.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-bridge.js"],
+      "world": "ISOLATED",
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "GeoMirror",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "geomirror@azurboy.github.io",
+      "data_collection_permissions": {
+        "required": ["locationInfo"]
+      }
+    }
+  },
+  "homepage_url": "https://github.com/Azurboy/geomirror"
+}

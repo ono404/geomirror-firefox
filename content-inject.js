@@ -15,18 +15,44 @@
  * invisible to pages. The outgoing Accept-Language *header* is handled in the
  * background worker via declarativeNetRequest (JS can't touch request headers).
  *
+ * All apply helpers are bidirectional: when a spoof switch flips off on an
+ * already-open page, the original function/descriptor is restored in place, so
+ * no patched API stays stuck until refresh. Repeated storage mutations re-apply
+ * from the captured originals, so wrappers never stack.
+ *
  * Spoofed functions keep toString() === "function name() { [native code] }".
  */
 (function () {
   const HTML = document.documentElement;
   if (!HTML) return;
 
-  // Capture real APIs before shadowing (used when an override is off / to defer).
+  // ---------------------------------------------------------------------------
+  // Capture real APIs before shadowing. Every apply helper builds wrappers from
+  // these captured originals (never from the currently-installed value), so
+  // repeated toggle events never nest wrappers. When a surface is inactive we
+  // assign the captured original back, fully undoing the patch.
+  // ---------------------------------------------------------------------------
   let realGeo = null;
   try { realGeo = navigator.geolocation; } catch (_) {}
   const realDTF = Intl.DateTimeFormat;
   const realNumFmt = Intl.NumberFormat;
   const realCol = Intl.Collator;
+  const realTZO = Date.prototype.getTimezoneOffset;
+
+  let realPermQuery = null;
+  try {
+    if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+      realPermQuery = navigator.permissions.query;
+    }
+  } catch (_) {}
+
+  // navigator.language / navigator.languages live on Navigator.prototype in
+  // modern browsers. We patch them by defining an own accessor on the instance
+  // (which shadows the prototype data property). To restore, we just delete the
+  // own accessor and the prototype property shows through again. We track
+  // whether we successfully patched so restoration is a no-op when there was
+  // nothing to undo.
+  let langPatched = false;
 
   let cache = null;
   let readyResolve;
@@ -83,8 +109,27 @@
     return null;
   }
 
+  function tzActive() {
+    return !!(cache && cache.tzEnabled && cache.timezone);
+  }
+
+  function langActive() {
+    return !!(cache && cache.langEnabled && cache.locale);
+  }
+
+  // Location/geolocation spoof is considered active when the master enabled
+  // flag is on. Used to gate the geolocation permission spoof.
+  function geoActive() {
+    return !!(cache && cache.enabled !== false);
+  }
+
   // ---------------------------------------------------------------------------
-  // Geolocation override (unchanged in spirit from upstream)
+  // Geolocation override
+  //
+  // The fake geolocation object is always installed on navigator.geolocation.
+  // Its methods delegate to realGeo whenever spoofing is disabled, so toggling
+  // the switch on an already-open page immediately routes to the real browser
+  // geolocation without needing to swap navigator.geolocation back and forth.
   // ---------------------------------------------------------------------------
   const watchHandlers = {};
   let watchCounter = 0;
@@ -105,7 +150,7 @@
     };
   }
 
-  function isGeoDisabled() { return !cache || cache.enabled === false; }
+  function isGeoDisabled() { return !geoActive(); }
 
   function getCurrentPosition(success, error, options) {
     if (typeof success !== 'function') {
@@ -149,54 +194,89 @@
     try { navigator.geolocation = fakeGeo; } catch (__) {}
   }
 
-  // Report geolocation permission as granted.
-  try {
-    if (navigator.permissions && navigator.permissions.query) {
-      const orig = navigator.permissions.query.bind(navigator.permissions);
-      const wrapped = function (desc) {
-        if (desc && desc.name === 'geolocation') {
-          return Promise.resolve({ state: 'granted', onchange: null });
-        }
-        return orig(desc);
-      };
-      nativize(wrapped, 'query');
-      navigator.permissions.query = wrapped;
+  // ---------------------------------------------------------------------------
+  // Permissions override
+  //
+  // Spoofs navigator.permissions.query for { name: 'geolocation' } ONLY while
+  // location spoofing is active. When location spoof is off, the real query is
+  // restored so pages see the true browser permission state.
+  // ---------------------------------------------------------------------------
+  function applyPermissions() {
+    if (!realPermQuery) return;
+    if (!geoActive() && cache) {
+      try { navigator.permissions.query = realPermQuery; } catch (_) {}
+      return;
     }
-  } catch (_) {}
+    // Already wrapped by a previous apply? realPermQuery is the captured
+    // original, so assigning it back above then re-wrapping here never nests.
+    // If page scripts query before the storage bridge publishes the first
+    // payload, hold the geolocation permission answer until `ready` resolves
+    // instead of leaking the real permission state.
+    const wrapped = function query(desc) {
+      if (desc && desc.name === 'geolocation') {
+        if (!cache) {
+          return ready.then(() => (geoActive()
+            ? { state: 'granted', onchange: null }
+            : realPermQuery.call(navigator.permissions, desc)));
+        }
+        return Promise.resolve({ state: 'granted', onchange: null });
+      }
+      return realPermQuery.call(navigator.permissions, desc);
+    };
+    nativize(wrapped, 'query');
+    try { navigator.permissions.query = wrapped; } catch (_) {}
+  }
+  applyPermissions();
 
   // ---------------------------------------------------------------------------
   // Timezone override
+  //
+  // Patches Date.prototype.getTimezoneOffset when active; restores the original
+  // method when inactive. Intl.DateTimeFormat is handled together with the
+  // language surface below (both can wrap DTF), so this function only owns the
+  // Date method.
   // ---------------------------------------------------------------------------
-  function tzActive() {
-    return !!(cache && cache.tzEnabled && cache.timezone);
-  }
-
-  function applyTimezone() {
-    if (!tzActive()) return;
+  function applyTimezoneOffset() {
+    if (!tzActive()) {
+      try { Date.prototype.getTimezoneOffset = realTZO; } catch (_) {}
+      return;
+    }
     const tz = cache.timezone;
-
     const fakeTZO = function getTimezoneOffset() {
       return tzOffsetMinutes(tz, this);
     };
     nativize(fakeTZO, 'getTimezoneOffset');
     try { Date.prototype.getTimezoneOffset = fakeTZO; } catch (_) {}
+  }
 
-    // Intl.DateTimeFormat: inject our timeZone when the caller didn't pass one,
-    // and our locale too (when language spoofing is on) so the default formatter
-    // matches navigator.language instead of leaking the host locale.
+  // ---------------------------------------------------------------------------
+  // Intl.DateTimeFormat — touched by both timezone (injects timeZone option)
+  // and language (substitutes default locale) spoofing. Built from realDTF
+  // (captured original) on every apply, so toggling either switch on/off on an
+  // already-open page re-derives the correct wrapper without stacking.
+  // ---------------------------------------------------------------------------
+  function applyIntlDateTimeFormat() {
+    const wantTz = tzActive();
+    const wantLang = langActive();
+    if (!wantTz && !wantLang) {
+      try { Intl.DateTimeFormat = realDTF; } catch (_) {}
+      return;
+    }
+    const tz = wantTz ? cache.timezone : null;
+    const loc = wantLang ? cache.locale : null;
     const wrappedDTF = function DateTimeFormat() {
       const args = arguments;
-      let locale = args[0];
-      let options = args[1];
+      let localeArg = args[0];
+      let optionsArg = args[1];
       // DateTimeFormat() / DateTimeFormat(options)
-      if (typeof locale === 'object' && locale !== null && !Array.isArray(locale) && options === undefined) {
-        options = locale; locale = undefined;
+      if (typeof localeArg === 'object' && localeArg !== null && !Array.isArray(localeArg) && optionsArg === undefined) {
+        optionsArg = localeArg; localeArg = undefined;
       }
-      const opts = (options && typeof options === 'object') ? Object.assign({}, options) : {};
-      if (opts.timeZone === undefined) opts.timeZone = tz;
-      if (locale === undefined && langActive()) locale = cache.locale;
-      if (locale === undefined) return new realDTF(opts);
-      return new realDTF(locale, opts);
+      const opts = (optionsArg && typeof optionsArg === 'object') ? Object.assign({}, optionsArg) : {};
+      if (wantTz && opts.timeZone === undefined) opts.timeZone = tz;
+      if (localeArg === undefined && wantLang) localeArg = loc;
+      if (localeArg === undefined) return new realDTF(undefined, opts);
+      return new realDTF(localeArg, opts);
     };
     wrappedDTF.prototype = realDTF.prototype;
     wrappedDTF.supportedLocalesOf = realDTF.supportedLocalesOf.bind(realDTF);
@@ -205,64 +285,68 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Language override
+  // Intl.NumberFormat / Intl.Collator — patched only for language spoofing.
+  // When language spoof is off, the captured original constructor is restored.
   // ---------------------------------------------------------------------------
-  function langActive() {
-    return !!(cache && cache.langEnabled && cache.locale);
+  function applyIntlCtor(realCtor, name) {
+    if (!realCtor) return;
+    if (!langActive()) {
+      try { Intl[name] = realCtor; } catch (_) {}
+      return;
+    }
+    const locale = cache.locale;
+    const wrapped = function () {
+      if (arguments.length === 0) return new realCtor(locale);
+      if (arguments.length === 1 && typeof arguments[0] === 'object' && arguments[0] !== null) {
+        return new realCtor(locale, arguments[0]);
+      }
+      return new (Function.prototype.bind.apply(realCtor, [null].concat(Array.from(arguments))))();
+    };
+    wrapped.prototype = realCtor.prototype;
+    if (realCtor.supportedLocalesOf) {
+      wrapped.supportedLocalesOf = realCtor.supportedLocalesOf.bind(realCtor);
+    }
+    nativize(wrapped, name);
+    try { Intl[name] = wrapped; } catch (_) {}
   }
 
-  function applyLanguage() {
-    if (!langActive()) return;
+  // ---------------------------------------------------------------------------
+  // navigator.language / navigator.languages — patched via an own accessor on
+  // the instance that shadows the prototype data property. Restoration deletes
+  // the own accessor (configurable: true) so the prototype property shows
+  // through again. If the browser refused the original patch, langPatched
+  // stays false and restoration is a no-op.
+  // ---------------------------------------------------------------------------
+  function applyNavigatorLanguage() {
+    if (!langActive()) {
+      if (langPatched) {
+        try { delete navigator.language; } catch (_) {}
+        try { delete navigator.languages; } catch (_) {}
+        langPatched = false;
+      }
+      return;
+    }
     const locale = cache.locale;
     const languages = (cache.languages && cache.languages.length) ? cache.languages : [locale];
-
-    try {
-      defineGetter(navigator, 'language', () => locale);
-      defineGetter(navigator, 'languages', () => languages.slice());
-    } catch (_) {}
-
-    // Intl default locale: when no locale arg is passed, substitute ours.
-    // Patch an Intl constructor `name` so that when no locale arg is passed, the
-    // spoofed locale is used; explicit locale args pass through untouched.
-    // `realCtor` is the captured *original* constructor, so re-running this on a
-    // storage change never wraps an already-wrapped function (no nesting).
-    function patchDefaultIntl(realCtor, name) {
-      if (!realCtor) return;
-      try {
-        const wrapped = function () {
-          if (arguments.length === 0) return new realCtor(locale);
-          if (arguments.length === 1 && typeof arguments[0] === 'object' && arguments[0] !== null) {
-            return new realCtor(locale, arguments[0]);
-          }
-          return new (Function.prototype.bind.apply(realCtor, [null].concat(Array.from(arguments))))();
-        };
-        wrapped.prototype = realCtor.prototype;
-        if (realCtor.supportedLocalesOf) {
-          wrapped.supportedLocalesOf = realCtor.supportedLocalesOf.bind(realCtor);
-        }
-        nativize(wrapped, name);
-        Intl[name] = wrapped;
-      } catch (_) {}
-    }
-    patchDefaultIntl(realNumFmt, 'NumberFormat');
-    patchDefaultIntl(realCol, 'Collator');
-    // DateTimeFormat default locale is already wrapped in applyTimezone; if tz
-    // is off we still want the locale default patched. Uses realDTF (captured
-    // original) so repeated runs never stack wrappers.
-    if (!tzActive()) {
-      patchDefaultIntl(realDTF, 'DateTimeFormat');
-    }
+    const okLang = defineGetter(navigator, 'language', () => locale);
+    const okLangs = defineGetter(navigator, 'languages', () => languages.slice());
+    if (okLang || okLangs) langPatched = true;
   }
 
   function applyAll() {
-    applyTimezone();
-    applyLanguage();
+    applyTimezoneOffset();
+    applyIntlDateTimeFormat();
+    applyIntlCtor(realNumFmt, 'NumberFormat');
+    applyIntlCtor(realCol, 'Collator');
+    applyNavigatorLanguage();
+    applyPermissions();
   }
 
   ready.then(applyAll);
 
   // ---------------------------------------------------------------------------
   // Live updates: bridge republishes -> refresh cache and re-fire watches.
+  // applyAll() runs in both directions (apply + restore) on every change.
   // ---------------------------------------------------------------------------
   const obs = new MutationObserver(() => {
     loadFromDOM();

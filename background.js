@@ -10,7 +10,13 @@
  *    *outgoing* HTTP header matches the spoofed language, not just navigator.
  *  - Refresh on install / startup and on demand (one-tap re-detect).
  */
-importScripts('lib/geo.js', 'lib/providers.js', 'lib/locale.js');
+// Chrome MV3 loads the background as a service worker and needs importScripts
+// to pull in lib/*. Firefox MV3 loads background.scripts (declared in
+// manifest.firefox.json) directly into an event page, where importScripts is
+// not available. Guard so the same source file works in both runtimes.
+if (typeof importScripts === 'function') {
+  importScripts('lib/geo.js', 'lib/providers.js', 'lib/locale.js');
+}
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -47,7 +53,7 @@ async function syncHeaderRule(settings, override) {
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: [AL_RULE_ID],
     });
-    if (!(settings && settings.enabled && settings.langEnabled)) return;
+    if (!(settings && settings.langEnabled)) return;
     let al = override && override.acceptLanguage;
     if (!al) return; // nothing to enforce yet
     await chrome.declarativeNetRequest.updateDynamicRules({

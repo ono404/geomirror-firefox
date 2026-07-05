@@ -5,6 +5,9 @@
 node_modules/
 *.log
 
+# Build output (Firefox dev package, etc.)
+dist/
+
 # Build artifacts (icons are generated, but committed for store convenience)
 # Uncomment to ignore generated icons:
 # icons/*.png

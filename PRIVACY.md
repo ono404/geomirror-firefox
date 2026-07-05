@@ -39,6 +39,34 @@ These are the **only** outbound connections the extension ever makes. They are
 declared in `manifest.json` under `host_permissions`, so you can verify them
 yourself and Chrome will warn you before granting them.
 
+### Firefox note on `<all_urls>` host permission
+
+The Firefox build (`manifest.firefox.json`, shipped as `dist/firefox/manifest.json`)
+adds `<all_urls>` to `host_permissions`. Firefox requires host permission on
+the request URL (and, for non-navigation requests, the initiator) before
+`declarativeNetRequest.modifyHeaders` will apply. The broad permission is
+therefore declared explicitly so the spoofed `Accept-Language` header matches
+the inferred locale on outgoing requests, and so the page-visible geolocation /
+timezone / language patches can run on every site you visit.
+
+This does **not** broaden what the extension reads or sends. In particular:
+
+- It still does not read page body text, cookies, form data, or browsing history.
+- The content scripts still only patch browser APIs (`navigator.geolocation`,
+  `navigator.permissions`, `Date.prototype.getTimezoneOffset`, `Intl`,
+  `navigator.language(s)`).
+- The background still only calls the providers listed above.
+
+If you do not want to grant `<all_urls>` host permission, do not install the
+Firefox build; the Chrome / Edge manifest does not request it.
+
+The Firefox manifest also declares the built-in Mozilla data collection
+permission `locationInfo`. This is because the extension contacts IP
+geolocation, Overpass, and reverse-geocoding services to resolve your visible
+exit IP and choose a nearby coordinate. This declaration does not add telemetry,
+analytics, account sync, browsing-history upload, form capture, or page-content
+collection.
+
 ## What is stored, and where
 
 - The detected IP, the chosen override coordinate, and your settings are stored
