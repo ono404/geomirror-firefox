@@ -1,42 +1,38 @@
-# Firefox bug-fix handoff
+# Firefox maintenance and release handoff
 
-This note is for the next Codex / TRAE session after the Firefox adaptation is already working. It is intentionally short: future agents should verify current Mozilla and project details again before changing code.
+## Current verified state — 2026-07-13
 
-## Current state as of 2026-07-05
+- Extension version: `1.2.1` in both manifests.
+- Private repository: `https://github.com/ono404/geomirror-firefox.git`.
+- Current source commit on `my-private/main`: `a4c40de fix: mask all FuckClaude Chinese font probes`.
+- Canonical signed Firefox package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi`.
+- Chrome / Edge manifest: `manifest.json`.
+- Firefox manifest source: `manifest.firefox.json`; build output: `dist/firefox/manifest.json`.
+- `dist/` is generated and ignored.
+- Regional font masking was manually confirmed against `LinXiaoTao/FuckClaude` after expanding the blocked-family list to all detector probes.
 
-- Private backup repository: `https://github.com/ono404/geomirror-firefox.git`
-- Firefox adaptation commit: `745d239 feat: add Firefox extension build`
-- Signed XPI artifact commit: `5c5cf5e chore: add signed Firefox xpi`
-- Signed Firefox package: `web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi`
-- Chrome / Edge manifest remains `manifest.json`.
-- Firefox manifest source is `manifest.firefox.json`; `tools/build-firefox.mjs` writes it to `dist/firefox/manifest.json`.
-- `dist/` is ignored build output. Do not commit it unless the project policy changes.
+The signed unlisted XPI is suitable for long-term local installation. It does not auto-update merely because source code changes on GitHub. Every change intended for the installed Firefox extension needs a higher version, a fresh Mozilla signature, and installation of the new XPI unless an explicit update-distribution mechanism is added later.
 
-## What to do for a future bug fix
+## Maintenance workflow
 
-1. Start by checking the real current state:
+1. Inspect and test the actual checkout:
 
-```bash
+```powershell
 git status --short --branch --untracked-files=all
 git remote -v
 node test/run-tests.js
+node test/inject-smoke.js
 ```
 
-2. Reproduce the bug before changing code. Save the exact Firefox version, switch state, page URL, console output, and verification JSON if available.
+2. Reproduce the issue before changing code. Record the browser version, page or detector, switch state, and observed output.
 
-3. Fix the smallest root cause. Preserve these boundaries:
+3. Preserve the project boundaries in `AGENTS.md`, including both browser manifests and the privacy red lines.
 
-- No telemetry.
-- No analytics.
-- No account system.
-- No remote config.
-- Do not read page body text, browsing history, cookies, form fields, or user input.
-- Do not break Chrome / Edge behavior while fixing Firefox, unless the user explicitly decides to maintain Firefox only.
+4. Run the complete check set:
 
-4. Run the normal local checks:
-
-```bash
+```powershell
 node test/run-tests.js
+node test/inject-smoke.js
 node --check background.js
 node --check content-inject.js
 node --check content-bridge.js
@@ -45,60 +41,29 @@ node --check lib/providers.js
 node --check tools/build-firefox.mjs
 node --check tools/serve-firefox-verify.mjs
 node tools/build-firefox.mjs
-web-ext lint --source-dir dist/firefox
+web-ext.cmd lint --source-dir dist/firefox
 ```
 
-5. Verify in Firefox with the helper page:
+PowerShell may block the `web-ext.ps1` shim; `web-ext.cmd` is the supported local workaround.
 
-```bash
-node tools/serve-firefox-verify.mjs
+5. Verify the affected behavior in the browser. For general Firefox checks, run `node tools/serve-firefox-verify.mjs` and open its printed local URL. For font-mask changes, test the current FuckClaude detector as well as a normal page that uses non-Chinese fonts.
+
+## Permanent Firefox release
+
+1. Increase `version` in both `manifest.json` and `manifest.firefox.json`.
+2. Build and pass the checks above.
+3. Keep Mozilla credentials outside the repository and sign from environment variables:
+
+```powershell
+web-ext.cmd sign --source-dir dist/firefox --channel unlisted --api-key $env:WEB_EXT_API_KEY --api-secret $env:WEB_EXT_API_SECRET
 ```
 
-Open the printed `http://127.0.0.1:<port>/` URL in Firefox and confirm the affected surface, plus the main regression surfaces: geolocation, timezone, language, Intl locale, and outgoing `Accept-Language`.
+4. Install and manually verify the returned signed XPI.
+5. Keep one canonical copy under `web-ext-artifacts/`.
+6. Commit the source and intended release artifact, then push to the private fork when authorized:
 
-## GitHub vs Firefox package
-
-GitHub stores the source code and backup history. After a bug fix, commit and push the source change:
-
-```bash
-git add <changed files>
-git commit -m "fix: describe the bug"
+```powershell
 git push my-private main
 ```
 
-That is enough for backup and for another computer to clone the fixed source.
-
-It is not enough to update an already installed permanent Firefox extension. For that, build and sign a new XPI.
-
-## Releasing a new permanent Firefox build
-
-Use this when the user wants the long-term installed Firefox add-on to receive the fix.
-
-1. Bump the extension version, for example from `1.1.0` to `1.1.1`, in both manifests that should represent the release:
-
-- `manifest.json`
-- `manifest.firefox.json`
-
-2. Build:
-
-```bash
-node tools/build-firefox.mjs
-```
-
-3. Sign with Mozilla API credentials from environment variables. Never commit the API key or secret.
-
-```bash
-web-ext sign --source-dir dist/firefox --channel unlisted --api-key $env:WEB_EXT_API_KEY --api-secret $env:WEB_EXT_API_SECRET
-```
-
-4. Install the newly downloaded `.xpi` in Firefox. For unlisted/self-distributed builds, assume manual installation unless a real update URL/distribution process is added later.
-
-5. If the user wants GitHub to keep the install package too, commit the new `.xpi` under `web-ext-artifacts/` and push it to `my-private`.
-
-## Useful reminders for the next agent
-
-- Temporary Firefox loading uses `dist/firefox/manifest.json` via `about:debugging#/runtime/this-firefox`; it disappears after Firefox restarts.
-- Permanent Firefox installation uses the signed `.xpi`.
-- If only testing a fix locally, temporary loading is faster and does not require signing.
-- If distributing the fix to the user's normal Firefox install, sign a new versioned `.xpi`.
-- Do not upload secrets. The signed XPI is okay to store in the private repo; Mozilla API credentials are not.
+Temporary Firefox loading remains available through `about:debugging#/runtime/this-firefox` by selecting `dist/firefox/manifest.json`; temporary installations disappear after restart.

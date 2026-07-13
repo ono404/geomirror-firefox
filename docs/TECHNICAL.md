@@ -81,10 +81,13 @@ unavailable family. Covered browser surfaces:
 - inline `CSSStyleDeclaration.font`, `fontFamily`, `cssText`, and `setProperty`
 - `FontFaceSet.check` / `document.fonts.check`
 
-This covers the common canvas-width and DOM-width availability probes for
-PingFang, Hiragino Sans GB, ST fonts, Microsoft YaHei, SimSun, MiSans,
-HarmonyOS Sans, OPPO Sans, vivo Sans, WPS, and Founder/FZ families. The mask
-automatically stays inactive for `zh-*` locales and Chinese-region timezones.
+The blocked-family set includes every Chinese-font probe currently used by the
+FuckClaude canvas detector: Microsoft YaHei / SimSun / KaiTi / FangSong,
+PingFang / Hiragino / ST families, Source Han and Noto CJK families,
+WenQuanYi, HarmonyOS / MiSans / OPPO / vivo vendor families, WPS fonts, and
+Founder / FZ families. Tests enforce that detector list so a future update
+cannot silently drop one family. The mask automatically stays inactive for
+`zh-*` locales and Chinese-region timezones.
 
 ## Limitations
 
@@ -93,7 +96,7 @@ automatically stays inactive for `zh-*` locales and Chinese-region timezones.
 - Provider timezone quality depends on the IP geolocation provider.
 - Some pages can use high-entropy fingerprinting surfaces not covered here.
 - Extensions cannot modify every possible low-level browser/network signal.
-- A Chrome extension cannot change the timezone seen by native programs such
+- A browser extension cannot change the timezone seen by native programs such
   as Claude Code; it changes web-page JavaScript surfaces only.
 
 ## Testing
@@ -113,16 +116,19 @@ node --check lib/font-mask.js
 node --check popup.js
 ```
 
+Build and lint the Firefox target as part of the same check:
+
+```powershell
+node --check tools/build-firefox.mjs
+node --check tools/serve-firefox-verify.mjs
+node tools/build-firefox.mjs
+web-ext.cmd lint --source-dir dist/firefox
+```
+
 Manual browser verification:
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Load this directory as an unpacked extension.
-4. Trigger refresh in the popup.
-5. On a test page, verify:
-   - `navigator.geolocation.getCurrentPosition(...)`
-   - `navigator.language`
-   - `navigator.languages`
-   - `Intl.DateTimeFormat().resolvedOptions()`
-   - `new Date().getTimezoneOffset()`
-   - Network request `Accept-Language` header in DevTools.
+1. Chrome / Edge: load the repository from the extensions page.
+2. Firefox: build, then temporarily load `dist/firefox/manifest.json` from `about:debugging#/runtime/this-firefox`.
+3. Trigger Refresh in the popup.
+4. Run `node tools/serve-firefox-verify.mjs` and verify geolocation, language, timezone, and outgoing `Accept-Language`.
+5. When font masking changes, verify the current FuckClaude detector and confirm ordinary non-Chinese fonts still render normally.

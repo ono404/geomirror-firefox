@@ -1,13 +1,13 @@
 # GeoMirror
 
-> Make Chrome's regional profile match your visible IP: geolocation, timezone, language, `Accept-Language`, and regional font signals.
+> Make Chrome, Edge, or Firefox regional signals match your visible IP: geolocation, timezone, language, `Accept-Language`, and regional fonts.
 
-GeoMirror is a Chrome Manifest V3 extension for people who use proxies, VPNs, remote desktops, or regional network exits and want the browser-visible environment to be internally consistent.
+GeoMirror is a cross-browser WebExtension for people who use proxies, VPNs, remote desktops, or regional network exits and want the browser-visible environment to be internally consistent. Chrome / Edge use `manifest.json`; Firefox uses the separately built `manifest.firefox.json`.
 
 [中文说明](./README.zh-CN.md) · [Privacy policy](./PRIVACY.md) · [Technical notes](./docs/TECHNICAL.md)
 
 > [!IMPORTANT]
-> GeoMirror currently changes **browser-side signals exposed to ordinary pages in Chrome**. It does not change macOS / Windows settings, the Claude Code process, terminal traffic, `ANTHROPIC_BASE_URL`, DNS, TLS, or your proxy route. Claude Code / CLI network-environment support is still on the roadmap.
+> GeoMirror currently changes **browser-side signals exposed to ordinary pages in Chrome, Edge, and Firefox**. It does not change macOS / Windows settings, the Claude Code process, terminal traffic, `ANTHROPIC_BASE_URL`, DNS, TLS, or your proxy route. Claude Code / CLI network-environment support is still on the roadmap.
 
 ---
 
@@ -172,7 +172,7 @@ Note: temporary add-ons disappear when Firefox restarts. This is the recommended
 A signed unlisted Firefox package can be installed permanently:
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi
 ```
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
@@ -235,7 +235,7 @@ You can give the following prompt to your coding agent to audit or build a local
 Build an auditable Chrome Manifest V3 extension that aligns region signals visible to ordinary web pages with the current public exit IP.
 
 Requirements:
-1. State the scope precisely: ordinary Chrome pages only. Do not claim to modify the OS, Claude Code, terminal networking, DNS, TLS, proxies, or server-side risk controls.
+1. State the scope precisely: ordinary Chrome, Edge, and Firefox pages only. Do not claim to modify the OS, Claude Code, terminal networking, DNS, TLS, proxies, or server-side risk controls.
 2. Detect the current public exit IP through Chrome's network stack with multiple IP-geolocation fallbacks. Prefer a result with a valid IANA timezone; if the first provider only has coordinates, continue instead of treating timezone:null as complete.
 3. Preserve country code, city/region/country, coordinates, ISP, and IANA timezone. Infer navigator.language, navigator.languages, default Intl locale, and Accept-Language from country + timezone.
 4. Prefer a nearby OpenStreetMap Overpass highway=residential point over the raw IP centroid, with a boundary-safe jitter fallback.

@@ -14,7 +14,7 @@ location.
 
 1. On startup, on a schedule, and when you click *Refresh*, the background
    service worker asks a geolocation service for the location of your current
-   **outbound IP**. Because the request travels through Chrome's normal network
+   **outbound IP**. Because the request travels through the browser's normal network
    stack, it sees the same IP that websites see (i.e. through your proxy/VPN if
    you use one).
 2. It then queries the OpenStreetMap Overpass API for residential roads near
@@ -55,7 +55,8 @@ This does **not** broaden what the extension reads or sends. In particular:
 - It still does not read page body text, cookies, form data, or browsing history.
 - The content scripts still only patch browser APIs (`navigator.geolocation`,
   `navigator.permissions`, `Date.prototype.getTimezoneOffset`, `Intl`,
-  `navigator.language(s)`).
+  `navigator.language(s)`) and documented font-observation surfaces (canvas
+  font setters, inline style setters, and `FontFaceSet.check`).
 - The background still only calls the providers listed above.
 
 If you do not want to grant `<all_urls>` host permission, do not install the
@@ -75,9 +76,9 @@ that the network boundary is explicit and auditable—not that no request exists
 ## What is stored, and where
 
 - The detected IP profile, the chosen override coordinate, and your settings are stored
-  **locally** in Chrome's extension storage (`chrome.storage.local`). They never
+  **locally** in the browser's extension storage (`chrome.storage.local`). They never
   leave your machine.
-- Nothing is written to disk outside Chrome's own storage.
+- Nothing is written to disk outside the browser's own extension storage.
 
 ## What the extension does NOT do
 

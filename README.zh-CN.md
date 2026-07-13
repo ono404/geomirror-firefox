@@ -1,13 +1,13 @@
 # GeoMirror
 
-> 让 Chrome 的地区画像与当前出口 IP 保持一致：地理位置、时区、语言、`Accept-Language` 与地区字体信号。
+> 让 Chrome、Edge 或 Firefox 的地区画像与当前出口 IP 保持一致：地理位置、时区、语言、`Accept-Language` 与地区字体信号。
 
-GeoMirror 是一个 Chrome Manifest V3 扩展，适合使用代理、VPN、远程桌面、跨区出口节点的人。它解决的问题不是“换 IP”，而是“换了 IP 之后，浏览器仍然暴露出另一个地区的环境”。
+GeoMirror 是一个跨浏览器 WebExtension，适合使用代理、VPN、远程桌面、跨区出口节点的人。Chrome / Edge 使用 `manifest.json`，Firefox 使用单独构建的 `manifest.firefox.json`。
 
 [English](./README.md) · [隐私政策](./PRIVACY.md) · [技术说明](./docs/TECHNICAL.md)
 
 > [!IMPORTANT]
-> GeoMirror 当前只处理 **Chrome 普通网页能够读取的浏览器端信号**。它不会改变 macOS / Windows 系统设置，也不会改变 Claude Code 进程、终端请求、`ANTHROPIC_BASE_URL`、DNS、TLS 或代理链路。Claude Code / CLI 网络环境支持仍在开发中。
+> GeoMirror 当前只处理 **Chrome、Edge 和 Firefox 普通网页能够读取的浏览器端信号**。它不会改变 macOS / Windows 系统设置，也不会改变 Claude Code 进程、终端请求、`ANTHROPIC_BASE_URL`、DNS、TLS 或代理链路。Claude Code / CLI 网络环境支持仍在开发中。
 
 ---
 
@@ -145,7 +145,7 @@ GeoMirror 是 local-first、可审计的：
 
 | 方案 | 优点 | 代价 / 风险 | 更适合 |
 | --- | --- | --- | --- |
-| GeoMirror | 继续使用原生 Chrome；根据当前出口 IP 自动更新定位、时区、语言和字体策略；开源、轻量、无需创建新浏览器画像 | 只覆盖 Chrome 网页端的一组地区一致性信号，不是完整反指纹系统 | 单一日常浏览器、VPN/代理切换、减少明显地区矛盾 |
+| GeoMirror | 继续使用现有 Chrome、Edge 或 Firefox；根据当前出口 IP 自动更新定位、时区、语言和字体策略；开源、轻量、无需创建新浏览器画像 | 只覆盖普通网页端的一组地区一致性信号，不是完整反指纹系统 | 单一日常浏览器、VPN/代理切换、减少明显地区矛盾 |
 | 指纹浏览器（Multilogin、GoLogin、AdsPower 等） | 独立 profile、Cookie 隔离、代理绑定；可控制 Canvas、WebGL、WebRTC、硬件参数等更多信号 | 需要单独浏览器/内核和 profile 管理，通常收费；独立内核、扩展集合、自动化行为或不一致配置也会成为检测面，并不天然“隐身” | 多账号隔离、团队协作、自动化和完整画像管理 |
 | 单项时区 / 语言扩展 | 安装简单、权限和实现面较小 | 通常依赖手动配置；代理出口变化后容易忘记同步，且不处理定位、字体和请求头之间的一致性 | 固定地区、只需修改单一信号 |
 | 修改操作系统 / 启动参数 | 可同时影响 Chrome 和部分本地程序 | 改动全局环境，切换成本高；仍需单独处理语言、字体、定位和网络出口 | 固定工作环境或需要覆盖本地 CLI |
@@ -224,7 +224,7 @@ dist/firefox/manifest.json
 已经签名的 Firefox 安装包位于：
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.1.0.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi
 ```
 
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
@@ -285,7 +285,7 @@ navigator.geolocation.getCurrentPosition(console.log, console.error)
 请构建一个可审计的 Chrome Manifest V3 扩展，让普通网页能够读取的地区画像与当前公网出口 IP 保持一致。
 
 要求：
-1. 范围必须写清楚：只处理 Chrome 普通网页端，不宣称能够修改操作系统、Claude Code、终端网络、DNS、TLS、代理或服务端风控。
+1. 范围必须写清楚：只处理 Chrome、Edge 和 Firefox 普通网页端，不宣称能够修改操作系统、Claude Code、终端网络、DNS、TLS、代理或服务端风控。
 2. 通过 Chrome 网络栈检测当前公网出口 IP，使用多个 IP geolocation provider fallback。优先返回包含有效 IANA timezone 的结果；第一个 provider 只有经纬度时必须继续查询，不能把 timezone:null 当成成功终点。
 3. 保留国家码、城市/地区/国家、经纬度、ISP、IANA timezone。根据国家码 + timezone 推断 locale bundle：navigator.language、navigator.languages、Intl 默认 locale 和 Accept-Language。
 4. 不直接使用 IP 中心点；优先用 OpenStreetMap Overpass 查询附近 highway=residential 道路，失败时使用边界安全的 jitter fallback。
