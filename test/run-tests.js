@@ -133,9 +133,21 @@ test('the first provider is location-only and later providers can supply timezon
   );
 });
 
-test('font mask recognizes system and Chinese vendor fonts', () => {
-  assert(Fonts.containsBlockedFont("72px 'PingFang SC', sans-serif"));
-  assert(Fonts.containsBlockedFont('16px MiSans'));
+test('font mask recognizes every family used by the FuckClaude canvas detector', () => {
+  const fuckClaudeFamilies = [
+    'Microsoft YaHei', 'Microsoft YaHei UI', 'SimSun', 'NSimSun', 'SimHei', 'KaiTi', 'FangSong', 'DengXian',
+    'PingFang SC', 'Hiragino Sans GB', 'STHeiti', 'STSong', 'Songti SC',
+    'Source Han Sans CN', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Serif CJK SC',
+    'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',
+    'Microsoft JhengHei', 'PMingLiU', 'MingLiU', 'DFKai-SB', 'PingFang TC', 'PingFang HK',
+    'Source Han Sans TW', 'Noto Sans CJK TC',
+    'MiSans', 'MIUI', 'HarmonyOS Sans SC', 'HarmonyOS Sans', 'HONOR Sans', 'OPPO Sans', 'vivo Sans',
+    'Alibaba PuHuiTi', 'Alibaba Sans', 'DingTalk JinBuTi', 'Douyin Sans', 'HYQiHei',
+    'FZShuSong-Z01S', 'FZKai-Z03S', 'FZHei-B01S', 'FZFangSong-Z02S',
+  ];
+  for (const family of fuckClaudeFamilies) {
+    assert(Fonts.containsBlockedFont(`72px "${family}", monospace`), `Missing font mask for ${family}`);
+  }
   assert(Fonts.containsBlockedFont('12px FZCustomFont'));
   assert(!Fonts.containsBlockedFont('16px Arial, sans-serif'));
 });
@@ -143,6 +155,10 @@ test('font mask recognizes system and Chinese vendor fonts', () => {
 test('font mask rewrites only regional font families', () => {
   eq(
     Fonts.rewriteFontSpec("72px 'PingFang SC', monospace"),
+    `72px '${Fonts.MASKED_FAMILY}', monospace`
+  );
+  eq(
+    Fonts.rewriteFontSpec("72px 'Source Han Sans SC', monospace"),
     `72px '${Fonts.MASKED_FAMILY}', monospace`
   );
   eq(Fonts.rewriteFontSpec('16px Arial, sans-serif'), '16px Arial, sans-serif');
