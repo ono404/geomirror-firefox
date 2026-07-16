@@ -1,17 +1,25 @@
 # Firefox maintenance and release handoff
 
-## Current verified state — 2026-07-13
+## Current source state — 2026-07-16
 
-- Extension version: `1.2.1` in both manifests.
+- Extension version: `1.2.2` in both source manifests.
+- Source status: upgraded in the current working tree; commit, push, Mozilla
+  signing, and signed-XPI installation are still pending.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
 - Current source commit on `my-private/main`: `a4c40de fix: mask all FuckClaude Chinese font probes`.
-- Canonical signed Firefox package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi`.
+- Latest canonical signed Firefox package remains the historical `1.2.1`
+  artifact: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi`. It does not
+  contain the `1.2.2` source changes.
 - Chrome / Edge manifest: `manifest.json`.
 - Firefox manifest source: `manifest.firefox.json`; build output: `dist/firefox/manifest.json`.
 - `dist/` is generated and ignored.
 - Regional font masking was manually confirmed against `LinXiaoTao/FuckClaude` after expanding the blocked-family list to all detector probes.
 
-The signed unlisted XPI is suitable for long-term local installation. It does not auto-update merely because source code changes on GitHub. Every change intended for the installed Firefox extension needs a higher version, a fresh Mozilla signature, and installation of the new XPI unless an explicit update-distribution mechanism is added later.
+The signed `1.2.1` unlisted XPI remains suitable for its existing installation,
+but it does not include this upgrade. Source changes on GitHub do not update an
+installed add-on. Installing `1.2.2` permanently requires a fresh Mozilla
+signature and installation of the newly signed XPI unless an explicit
+update-distribution mechanism is added later.
 
 ## Maintenance workflow
 

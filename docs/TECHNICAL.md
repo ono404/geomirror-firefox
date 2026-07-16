@@ -19,7 +19,9 @@ The extension currently spoofs:
 ## Runtime flow
 
 1. `background.js` detects the visible exit IP location using multiple IP providers.
-2. `lib/providers.js` normalizes provider responses and preserves IANA timezone IDs when providers return them.
+2. `lib/providers.js` tries `ipapi.co`, `ipwho.is`, and `ipinfo.io` before the
+   final location-only `reallyfreegeoip` fallback. It normalizes provider
+   responses and preserves IANA timezone IDs when providers return them.
 3. `lib/geo.js` chooses a nearby residential-looking coordinate using Overpass/OpenStreetMap, with fallback logic when Overpass is unavailable.
 4. `lib/locale.js` infers a plausible locale bundle from country code and timezone.
 5. `background.js` stores the computed override and status in `chrome.storage.local`.
