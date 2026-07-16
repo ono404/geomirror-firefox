@@ -1,25 +1,26 @@
 # Firefox maintenance and release handoff
 
-## Current source state — 2026-07-16
+## Current verified release state — 2026-07-16
 
-- Extension version: `1.2.2` in both source manifests.
-- Source status: upgraded in the current working tree; commit, push, Mozilla
-  signing, and signed-XPI installation are still pending.
+- Extension version: `1.2.2` in both source manifests and the Firefox build.
+- Source upgrade commit: `056bb10 chore: upgrade GeoMirror to 1.2.2`.
+- Upstream merge commit: `ccf0511 Merge remote-tracking branch 'origin/main'`.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
-- Current source commit on `my-private/main`: `a4c40de fix: mask all FuckClaude Chinese font probes`.
-- Latest canonical signed Firefox package remains the historical `1.2.1`
-  artifact: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi`. It does not
-  contain the `1.2.2` source changes.
+- Canonical signed Firefox package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi`.
+- Signed package SHA-256: `426f47c8f1ea4e63dc6f0a8e9cb1438d0228985316baae7f75def82d43957179`.
+- Mozilla distribution channel: unlisted. The package was installed in Firefox
+  and user-confirmed to run normally on `2026-07-16`.
+- The signed `1.1.0` and `1.2.1` packages remain historical artifacts.
 - Chrome / Edge manifest: `manifest.json`.
 - Firefox manifest source: `manifest.firefox.json`; build output: `dist/firefox/manifest.json`.
 - `dist/` is generated and ignored.
 - Regional font masking was manually confirmed against `LinXiaoTao/FuckClaude` after expanding the blocked-family list to all detector probes.
 
-The signed `1.2.1` unlisted XPI remains suitable for its existing installation,
-but it does not include this upgrade. Source changes on GitHub do not update an
-installed add-on. Installing `1.2.2` permanently requires a fresh Mozilla
-signature and installation of the newly signed XPI unless an explicit
-update-distribution mechanism is added later.
+The signed `1.2.2` unlisted XPI is the current long-term Firefox installation
+package. Source changes on GitHub do not update an installed add-on; future
+Firefox releases still require a version bump, a fresh Mozilla signature, and
+installation of the newly signed XPI unless an explicit update-distribution
+mechanism is added later.
 
 ## Maintenance workflow
 

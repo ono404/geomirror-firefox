@@ -13,7 +13,7 @@ GeoMirror 是一个跨浏览器 WebExtension，适合使用代理、VPN、远程
 
 ## Motivation：只换 IP 远远不够
 
-最近 Claude / Anthropic 的封号风波让很多人意识到一个现实问题：平台的风控如果机械地依赖地址、地区、登录环境等信号，就可能非常粗暴。很多用户反馈过，只是换了 IP、旅行、使用 VPN、或者浏览器环境和 IP 地区不一致，就可能触发账号限制甚至封禁。
+Claude / Anthropic 的封号风波让很多人意识到一个现实问题：平台的风控如果机械地依赖地址、地区、登录环境等信号，就可能非常粗暴。很多用户反馈过，只是换了 IP、旅行、使用 VPN、或者浏览器环境和 IP 地区不一致，就可能触发账号限制甚至封禁。
 
 Anthropic（Claude 的母公司）把这类粗糙的位置/地址启发式信号变成账号损失风险，这种做法当然令人愤怒。但愤怒解决不了实际问题。我们能做的是把自己的浏览器环境整理得更一致，减少无谓的风险信号。
 
@@ -105,7 +105,7 @@ flowchart LR
 
 ## 它具体做了什么
 
-GeoMirror 会检测当前可见的 **出口 IP**，根据这个 IP 派生出一个合理的浏览器画像，然后在 Chrome 本地应用：
+GeoMirror 会检测当前可见的 **出口 IP**，根据这个 IP 派生出一个合理的浏览器画像，然后在当前浏览器中应用：
 
 1. 伪装 HTML5 地理位置：`navigator.geolocation`
 2. 伪装地理位置权限：`navigator.permissions.query({ name: "geolocation" })`
@@ -131,7 +131,7 @@ GeoMirror 是 local-first、可审计的：
 
 ### 联网边界：没有自建后端，但不是零联网
 
-要做到一键匹配当前出口 IP，GeoMirror 必须通过 Chrome 的网络栈请求 manifest 中明确列出的公共 IP / 地图接口。这些请求只用于：
+要做到一键匹配当前出口 IP，GeoMirror 必须通过浏览器的网络栈请求 manifest 中明确列出的公共 IP / 地图接口。这些请求只用于：
 
 - 检测出口 IP 的位置；
 - 查询出口 IP 附近住宅道路；
@@ -150,7 +150,7 @@ GeoMirror 是 local-first、可审计的：
 | 单项时区 / 语言扩展 | 安装简单、权限和实现面较小 | 通常依赖手动配置；代理出口变化后容易忘记同步，且不处理定位、字体和请求头之间的一致性 | 固定地区、只需修改单一信号 |
 | 修改操作系统 / 启动参数 | 可同时影响 Chrome 和部分本地程序 | 改动全局环境，切换成本高；仍需单独处理语言、字体、定位和网络出口 | 固定工作环境或需要覆盖本地 CLI |
 
-成熟指纹浏览器也会自动让时区、定位匹配代理 IP，并覆盖更多浏览器表面；例如 [Multilogin 的官方指纹设置说明](https://multilogin.com/help/en_US/profile-settings-fingerprint-section) 和 [GoLogin 的 profile 参数文档](https://gologin.com/docs/profile-parameters)。GeoMirror 的差异不是“覆盖得更多”，而是**不创建另一套浏览器身份**：它在你现有 Chrome 中，围绕当前出口 IP 自动修正最明显的地区矛盾。
+成熟指纹浏览器也会自动让时区、定位匹配代理 IP，并覆盖更多浏览器表面；例如 [Multilogin 的官方指纹设置说明](https://multilogin.com/help/en_US/profile-settings-fingerprint-section) 和 [GoLogin 的 profile 参数文档](https://gologin.com/docs/profile-parameters)。GeoMirror 的差异不是“覆盖得更多”，而是**不创建另一套浏览器身份**：它在你现有浏览器中，围绕当前出口 IP 自动修正最明显的地区矛盾。
 
 “指纹浏览器本身就是一种特征”需要更准确地理解：使用指纹浏览器不等于一定会被识别，但任何少见内核、异常 API 行为、频繁变化或参数互相矛盾都可能增加可区分性。稳定且内部一致的画像，比随机修改更多参数更重要。
 
@@ -224,7 +224,7 @@ dist/firefox/manifest.json
 已经签名的 Firefox 安装包位于：
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
 ```
 
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。

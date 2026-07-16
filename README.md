@@ -13,7 +13,7 @@ GeoMirror is a cross-browser WebExtension for people who use proxies, VPNs, remo
 
 ## Motivation: IP alone is not enough
 
-Recent Claude / Anthropic account-ban controversies made one thing very clear: location-based risk controls can become brutal when they are applied mechanically. Many users reported that simply changing IPs, traveling, using VPNs, or having inconsistent regional signals could trigger account restrictions or bans. When a company such as Anthropic turns coarse address/location heuristics into account loss, the result is infuriating — but anger does not solve the operational problem.
+Claude / Anthropic account-ban controversies made one thing very clear: location-based risk controls can become brutal when they are applied mechanically. Many users reported that simply changing IPs, traveling, using VPNs, or having inconsistent regional signals could trigger account restrictions or bans. When a company such as Anthropic turns coarse address/location heuristics into account loss, the result is infuriating — but anger does not solve the operational problem.
 
 The practical problem is this:
 
@@ -45,7 +45,7 @@ This is one result for a specific machine, Chrome version, exit IP, and detector
 
 ## What GeoMirror does
 
-GeoMirror detects your visible **exit IP**, derives a plausible browser profile from that IP, and applies it locally inside Chrome:
+GeoMirror detects your visible **exit IP**, derives a plausible browser profile from that IP, and applies it locally inside the browser:
 
 | Surface | What GeoMirror changes |
 | --- | --- |
@@ -73,7 +73,7 @@ GeoMirror is local-first and auditable:
 
 ### Network boundary: no project backend, but not zero-network
 
-To match your current exit IP automatically, GeoMirror must call explicitly listed public IP/geolocation/map APIs through Chrome’s network stack. These requests are limited to:
+To match your current exit IP automatically, GeoMirror must call explicitly listed public IP/geolocation/map APIs through the browser's network stack. These requests are limited to:
 
 - detecting the exit IP location,
 - finding nearby residential roads,
@@ -87,19 +87,19 @@ It does not send page text, browsing history, cookies, credentials, form data, o
 
 | Approach | Strengths | Costs / risks | Best fit |
 | --- | --- | --- | --- |
-| GeoMirror | Uses your existing Chrome; automatically updates location, timezone, language, and font policy from the current exit IP; open-source and lightweight | Covers a focused set of Chrome page-level regional signals, not the complete fingerprint surface | One everyday browser, VPN/proxy switching, reducing obvious regional contradictions |
+| GeoMirror | Uses your existing Chrome, Edge, or Firefox; automatically updates location, timezone, language, and font policy from the current exit IP; open-source and lightweight | Covers a focused set of browser page-level regional signals, not the complete fingerprint surface | One everyday browser, VPN/proxy switching, reducing obvious regional contradictions |
 | Anti-detect browsers (Multilogin, GoLogin, AdsPower, etc.) | Isolated profiles/cookies, proxy binding, broader control over Canvas, WebGL, WebRTC, hardware parameters, and automation | Separate browser/core and profile management, often paid; unusual cores, extensions, automation behavior, or internally inconsistent settings also become part of the observable surface | Multi-account isolation, teams, automation, and full profile management |
 | Single-purpose timezone/language extensions | Small and simple | Usually manual; easy to forget after changing exits, and does not coordinate geolocation, fonts, locale, and request headers | Fixed regions and one-signal changes |
 | OS settings / launch flags | Can affect Chrome and some local programs | Global side effects and higher switching cost; language, fonts, location, and the network exit still need separate handling | Fixed work environments or local CLI coverage |
 
-Mature anti-detect browsers also match timezone/geolocation to a proxy IP and cover many more surfaces; see the official [Multilogin fingerprint settings](https://multilogin.com/help/en_US/profile-settings-fingerprint-section) and [GoLogin profile parameters](https://gologin.com/docs/profile-parameters). GeoMirror's distinction is not broader coverage. It avoids creating a separate browser identity and instead repairs the most obvious regional contradictions inside your existing Chrome.
+Mature anti-detect browsers also match timezone/geolocation to a proxy IP and cover many more surfaces; see the official [Multilogin fingerprint settings](https://multilogin.com/help/en_US/profile-settings-fingerprint-section) and [GoLogin profile parameters](https://gologin.com/docs/profile-parameters). GeoMirror's distinction is not broader coverage. It avoids creating a separate browser identity and instead repairs the most obvious regional contradictions inside your existing browser.
 
 “An anti-detect browser is itself a fingerprint” needs nuance: using one does not make detection inevitable, but any rare browser core, unusual API behavior, unstable parameters, or internal mismatch can increase distinguishability. A stable, coherent profile matters more than changing the maximum number of values.
 
 ## How it works
 
 ```
-   proxy / VPN / remote exit          Chrome + GeoMirror
+   proxy / VPN / remote exit          browser + GeoMirror
               │                              │
               ▼                              ▼
         visible exit IP ───────► background service worker
@@ -128,7 +128,7 @@ Technical sequence:
 3. `lib/geo.js` chooses a nearby residential-looking coordinate using OpenStreetMap / Overpass.
 4. `lib/locale.js` infers a plausible locale bundle from country code + timezone.
 5. `background.js` stores the override locally and installs a dynamic `Accept-Language` header rule.
-6. `content-bridge.js` runs in Chrome’s isolated extension world, reads local storage, and publishes the payload into a DOM attribute.
+6. `content-bridge.js` runs in the browser's isolated extension world, reads local storage, and publishes the payload into a DOM attribute.
 7. `content-inject.js` runs in the page’s MAIN world at `document_start` and patches the browser APIs before page scripts run.
 
 ## Install
@@ -172,7 +172,7 @@ Note: temporary add-ons disappear when Firefox restarts. This is the recommended
 A signed unlisted Firefox package can be installed permanently:
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.1.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
 ```
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
