@@ -694,6 +694,105 @@ test('F011: Accept-Language rule keeps rule id 9001, set-value header action and
     'the rule must stay gated by langEnabled');
 });
 
+// ---------------------------------------------------------------------------
+// FONT round 2 regressions: legal font-shorthand semantics and page-readable
+// NPO setter source. Round 1 closed D-FONT-01 (route split) and D-FONT-02
+// (zz marker); round 2 fixes (a) shorthand components being collapsed into a
+// family list and (b) the NPO setter source exposing mask implementation
+// identifiers (activeImpl/maskImpl).
+// ---------------------------------------------------------------------------
+
+test('font-mask-isolated keeps every non-family shorthand component: medium/small/larger/calc/clamp/numeric', () => {
+  const cases = [
+    // size keyword medium + line-height, style/variant/weight preserved
+    ['italic small-caps bold medium/1.2 "Microsoft YaHei", serif', 'italic small-caps bold medium/1.2 serif'],
+    // size keyword small
+    ['italic bold small "PingFang SC", monospace', 'italic bold small monospace'],
+    // size keyword larger + numeric weight
+    ['normal 700 larger "Microsoft YaHei", sans-serif', 'normal 700 larger sans-serif'],
+    // calc() size (commas/parens inside the function must survive)
+    ['italic calc(12px + 1vw)/1.4 "Microsoft YaHei", serif', 'italic calc(12px + 1vw)/1.4 serif'],
+    // clamp() size (commas INSIDE the function are not family separators)
+    ['italic clamp(1rem, 2vw, 2rem)/1.5 "PingFang SC", monospace', 'italic clamp(1rem, 2vw, 2rem)/1.5 monospace'],
+    // numeric size with line-height
+    ['italic bold 16px/1.5 "Microsoft YaHei", serif', 'italic bold 16px/1.5 serif'],
+    // blocked-only shorthand: size kept, standard generic supplied
+    ['medium "Microsoft YaHei"', 'medium sans-serif'],
+    // stretch percentage + oblique angle in the prefix survive
+    ['italic 80% 12px "Microsoft YaHei", serif', 'italic 80% 12px serif'],
+    ['italic oblique 10deg 12px/1.2 "Microsoft YaHei", Arial', 'italic oblique 10deg 12px/1.2 Arial'],
+  ];
+  for (const [input, expected] of cases) {
+    const out = FontMaskIso.rewriteFontSpec(input);
+    eq(out, expected);
+    assert(!/zz[0-9a-f]{12}|GeoMirror|mirror|__|^[0-9a-f]{12,}$/i.test(out),
+      `no self-made family may appear: ${out}`);
+  }
+});
+
+test('font-mask-isolated matches blocked families exactly, never by substring', () => {
+  // A family whose NAME merely contains a blocked name is ordinary and must
+  // survive byte-identically.
+  eq(FontMaskIso.rewriteFontSpec('16px "Not Microsoft YaHei Custom", serif'),
+    '16px "Not Microsoft YaHei Custom", serif');
+  eq(FontMaskIso.rewriteFontSpec('"Not Microsoft YaHei Custom"'), '"Not Microsoft YaHei Custom"');
+  eq(FontMaskIso.rewriteFontSpec('16px MyMicrosoft YaHei, serif'), '16px MyMicrosoft YaHei, serif');
+  eq(FontMaskIso.rewriteFontSpec('16px "PingFang SC Remake", monospace'), '16px "PingFang SC Remake", monospace');
+  // The contains gate must use the same exact semantics.
+  assert.strictEqual(FontMaskIso.containsBlockedFont('12px "Not Microsoft YaHei Custom"'), false);
+  assert.strictEqual(FontMaskIso.containsBlockedFont('12px "Microsoft YaHei"'), true);
+  // Exact hits are still removed, quoted and unquoted alike.
+  eq(FontMaskIso.rewriteFontSpec('16px "Microsoft YaHei", serif'), '16px serif');
+  eq(FontMaskIso.rewriteFontSpec('16px Microsoft YaHei, serif'), '16px serif');
+  eq(FontMaskIso.rewriteFontSpec('16px "PingFang SC", monospace'), '16px monospace');
+});
+
+test('font-mask-isolated has no incomplete numeric-size heuristic (SIZE_TOKEN removed)', () => {
+  const src = readFile('lib/font-mask-isolated.js');
+  // Round-1 size detection only matched numeric units; size keywords
+  // (medium/small/larger), calc() and clamp() fell through to the family
+  // list and were destroyed. The old token must be gone and a real tokenizer
+  // must be present instead.
+  assert(!/SIZE_TOKEN/.test(src), 'the incomplete SIZE_TOKEN regex must be removed');
+  assert(!src.includes('px|em|rem|pt|pc|in|cm|mm|q|ex|ch|%|vw|vh'),
+    'no numeric-unit-only size detection may remain');
+  assert(/function tokenizeFontValue/.test(src), 'a real CSS-font tokenizer must exist');
+  assert(/function findSizeToken/.test(src), 'shorthand size location must use the tokenizer');
+});
+
+test('content-isolated.js NPO hook exposes no mask implementation source to the page', () => {
+  const src = readFile('content-isolated.js');
+  // The page-realm setter installed on the named-properties object must have
+  // a neutral source: no mask identifiers, no conversion identifiers, no
+  // blocked family names. The mask logic stays in the content world.
+  assert(!/activeImpl/.test(src) && !/maskImpl/.test(src),
+    'maskImpl/activeImpl identifiers must be gone from the injector');
+  const hookStart = src.indexOf('function installStyleFontHook');
+  const hookEnd = src.indexOf('function applyFontPatches');
+  assert(hookStart >= 0 && hookEnd > hookStart, 'installStyleFontHook body must be extractable');
+  const hook = src.slice(hookStart, hookEnd);
+  for (const banned of ['fontMaskActive', 'rewriteFontSpec', 'containsBlockedFont', 'GeoMirrorFontMask']) {
+    assert(!hook.includes(banned), `NPO hook page template must not contain ${banned}`);
+  }
+  // The setter the page can read is exactly a neutral delegation shim.
+  assert(hook.includes('var fn = function (value) { return handler(this, value); };'),
+    'the page-visible setter must be a neutral handler delegation');
+  assert(hook.includes('var handler = function (target, value) { return origSet.call(target, convert(value)); };'),
+    'the content-side conversion must be reached through a closure-only handler');
+  assert(!hook.includes('String(value)'), 'no coercion/mask logic may appear in the page template');
+});
+
+test('F011 regression tests remain present in the suite', () => {
+  const src = readFile('test/run-tests.js');
+  // Count only the pre-round-2 part of the file: this test's own source also
+  // contains the pattern strings and would otherwise count itself.
+  const head = src.slice(0, src.indexOf('// FONT round 2 regressions'));
+  const f011 = (head.split("test('F011: DNR Accept-Language").length - 1) +
+    (head.split("test('F011: Accept-Language rule keeps").length - 1);
+  eq(f011, 2, 'both F011 tests must still be registered');
+  assert(src.includes('resourceTypes') && src.includes('AL_RULE_ID'), 'F011 assertions must still be wired');
+});
+
 if (process.exitCode) {
   console.error('\nTests failed.');
   process.exit(process.exitCode);

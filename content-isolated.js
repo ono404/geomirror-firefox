@@ -759,11 +759,10 @@
   // native accessors untouched.
   function installStyleFontHook() {
     try {
-      const maskImpl = exportFunction(function (value) {
+      const convert = exportFunction(function (value) {
         return maskedFont(value);
       }, rawWin);
-      const activeImpl = exportFunction(fontMaskActive, rawWin);
-      return makePageFn('maskImpl', 'activeImpl',
+      return makePageFn('convert',
         'var el = document.documentElement;' +
         'var npo = el && Object.getPrototypeOf(el.style);' +
         'if (!npo) return { font: false, fontFamily: false };' +
@@ -771,10 +770,8 @@
         '  var d = Object.getOwnPropertyDescriptor(npo, prop);' +
         '  if (!d || typeof d.get !== "function" || typeof d.set !== "function") return false;' +
         '  var origGet = d.get, origSet = d.set;' +
-        '  var fn = function (value) {' +
-        '    var v = activeImpl() ? maskImpl(String(value)) : value;' +
-        '    return origSet.call(this, v);' +
-        '  };' +
+        '  var handler = function (target, value) { return origSet.call(target, convert(value)); };' +
+        '  var fn = function (value) { return handler(this, value); };' +
         '  try { Object.defineProperty(fn, "name", { value: "set " + prop, configurable: true }); } catch (e) {}' +
         '  try {' +
         '    Object.defineProperty(npo, prop, {' +
@@ -784,7 +781,7 @@
         '  } catch (e) { return false; }' +
         '}' +
         'return { font: install("font"), fontFamily: install("fontFamily") };'
-      )(maskImpl, activeImpl);
+      )(convert);
     } catch (_) {
       return { font: false, fontFamily: false };
     }
