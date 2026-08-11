@@ -793,6 +793,75 @@ test('F011 regression tests remain present in the suite', () => {
   assert(src.includes('resourceTypes') && src.includes('AL_RULE_ID'), 'F011 assertions must still be wired');
 });
 
+test('font-mask-isolated hits CSS-escape spellings of blocked families', () => {
+  const cases = [
+    // simple escape (escaped space)
+    ['16px Microsoft\\ YaHei, serif', '16px serif'],
+    // hex escape with the optional terminating space consumed
+    ['16px Microsoft\\20 YaHei, serif', '16px serif'],
+    // hex escape inside a quoted string
+    ['16px "\\4D icrosoft YaHei", serif', '16px serif'],
+    ['16px "PingFang\\20 SC", monospace', '16px monospace'],
+    // comment separator (with and without surrounding whitespace)
+    ['16px Microsoft/**/ YaHei, serif', '16px serif'],
+    ['16px Microsoft/**/YaHei, serif', '16px serif'],
+    // 6-digit hex escape
+    ['16px Microsoft\\000020YaHei, serif', '16px serif'],
+    // hex escape without a terminator before a non-hex char
+    ['16px "\\4Dicrosoft YaHei", serif', '16px serif'],
+    // case-insensitive after decoding
+    ['16px "MiCrOsOft\\20 YaHei", serif', '16px serif'],
+  ];
+  for (const [input, expected] of cases) {
+    eq(FontMaskIso.rewriteFontSpec(input), expected);
+    assert.strictEqual(FontMaskIso.containsBlockedFont(input), true, `contains must hit: ${input}`);
+  }
+});
+
+test('font-mask-isolated does not misfire on escaped lookalikes or malformed escapes', () => {
+  const unchanged = [
+    '16px "Not Microsoft\\20 YaHei Custom", serif', // substring lookalike
+    '16px "A\\2C B", serif',                        // escaped comma
+    '16px "PingFang\\22 SC", monospace',             // escaped quote
+    '16px Microsoft\\Z YaHei, serif',                // simple escape -> different name
+    '16px "PingFang\\',                               // unterminated string
+    '16px Microsoft\\',                               // trailing backslash at EOF
+    '16px "Microsoft  YaHei", serif',                 // two real spaces = different family
+  ];
+  for (const input of unchanged) {
+    eq(FontMaskIso.rewriteFontSpec(input), input, `must stay byte-identical: ${input}`);
+    assert.strictEqual(FontMaskIso.containsBlockedFont(input), false, `must not hit: ${input}`);
+  }
+});
+
+test('font-mask-isolated keeps shorthand components with escaped blocked families', () => {
+  eq(FontMaskIso.rewriteFontSpec('italic small-caps bold medium/1.2 Microsoft\\20 YaHei, serif'),
+    'italic small-caps bold medium/1.2 serif');
+  eq(FontMaskIso.rewriteFontSpec('italic calc(12px + 1vw)/1.4 "PingFang\\20 SC", monospace'),
+    'italic calc(12px + 1vw)/1.4 monospace');
+  eq(FontMaskIso.rewriteFontSpec('italic clamp(1rem, 2vw, 2rem)/1.5 Microsoft\\ YaHei, sans-serif'),
+    'italic clamp(1rem, 2vw, 2rem)/1.5 sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('italic bold 16px/1.5 "Microsoft\\ YaHei", serif'),
+    'italic bold 16px/1.5 serif');
+  // invalid code point 0 becomes U+FFFD: not a blocked family, stays verbatim
+  eq(FontMaskIso.rewriteFontSpec('16px "Microsoft\\0 YaHei", serif'), '16px "Microsoft\\0 YaHei", serif');
+});
+
+test('escape fix keeps NPO neutrality and D-FONT/F011 closure intact', () => {
+  const ci = readFile('content-isolated.js');
+  assert(!/activeImpl|maskImpl/.test(ci), 'NPO mask identifiers must stay gone');
+  assert(ci.includes('return handler(this, value)'), 'NPO setter must stay a neutral delegation');
+  const tests = readFile('test/run-tests.js');
+  const head = tests.slice(0, tests.indexOf('// FONT round 2 regressions'));
+  const f011 = (head.split("test('F011: DNR Accept-Language").length - 1) +
+    (head.split("test('F011: Accept-Language rule keeps").length - 1);
+  eq(f011, 2, 'both F011 tests must still be registered');
+  const lib = readFile('lib/font-mask-isolated.js');
+  assert(!/SIZE_TOKEN/.test(lib), 'no incomplete size heuristic may return');
+  assert(!/zz[0-9a-f]{12}/.test(lib + ci), 'no zz marker anywhere');
+});
+
+
 if (process.exitCode) {
   console.error('\nTests failed.');
   process.exit(process.exitCode);

@@ -1,5 +1,5 @@
-# FONT 修复轮 2（2026-08-11，executor 轮）——基线 1c058c4dbcdf3f311c59f40c80a72c2b8a097804
-- 目标：保留已关闭的 zz marker/API 路由分裂，修复 (1) font shorthand 中 medium/small/larger/calc()/clamp() 被误当 family 压掉，(2) NPO setter 页面可读源码暴露 activeImpl()/maskImpl()。
-- 顺序：任务0 基线核对（HEAD/status/版本/SHA/PID 全过，47 tests+smoke 绿，旧 judge PASS）→ 任务1 v2 判卷（judge-v2 红 340；发现 route-split 需按 off 原生接受范围门控 → 保留 v2 新建 v2b，恢复 1c058c4 重取红 340 后冻结 v2b SHA）→ 任务2 最小实现（lib 全量 tokenizer+精确 family 匹配+逐 token 保留原串；NPO setter 中性 handler 间接层）→ 任务3 只增 5 测试=52 全绿，v2b 双文档 off/on 绿 PASS 0 failures → 任务4 明卷全绿（tests 52、smoke、9×node --check、build 17、lint 0/0/0、diff --check、dist SHA==source、旧 judge PASS、frozen/dirty SHA 不变、残留 0）→ 原子 commit。
-- 最大风险已消解：OffscreenCanvas 原生拒绝 larger/calc/clamp 属浏览器能力边界（off 基线同样拒绝），非遮罩缺陷，judge 以原生接受范围门控；shorthand 歧义（oblique 角度/权重数字/stretch %/var()）由「闭集关键字 + 最后 fn 候选 + family-like 尾部校验」覆盖并双文档实测。
-- 边界遵守：只改 content-isolated.js / lib/font-mask-isolated.js / test/run-tests.js(仅增 5 条) / PROGRESS.md；v2 与 v2b 判卷、raw、profile、日志全部落在 evidence\FONT-implementation\**；旧 verifier 三文件、F011、背景、manifest、tools、inject-smoke、既有 raw 未动；三处用户 dirty 未碰；不 push/merge/签名。BLOCKED.md=无。
+# FONT 修复轮 3（2026-08-11，executor 轮）——基线 58f66530e2b65507c44a57ed6e30386d898e5bca
+- 目标：修复 CSS escape 绕过（`Microsoft\ YaHei` / `\20` / `"\4D icrosoft…"` / `/**/` 注释分隔等转义形式书写的 blocked family 未命中遮罩）；普通 family、合法 shorthand、D-FONT-01/02、F011、NPO 中性源码不得回归。
+- 顺序：任务0 基线核对（HEAD/status/版本/SHA/PID/端口全过，52 tests+smoke 绿）→ 任务1 v3 判卷（server-v3/judge-v3/run-v3，18953；58f6653 未改 production 取红 236 violations 并冻结 SHA）→ 任务2 lib 最小实现（decodeCssEscapes：1-6 hex+可选终止空白+简单转义+escaped newline+注释→空格；仅用于 isBlockedFamilyName 整名比较）→ 任务3 只增 4 测试=56 全绿；冻结 v3 绿 PASS 0 failures；v2b/旧 judge 仍 PASS → 任务4 明卷全绿（tests 56、smoke、9×check、build 17、lint 0/0/0、diff --check、dist parity、frozen/dirty SHA 不变、残留 0）→ 原子 commit。
+- 风险处置：probe 模板字符串反斜杠双减半导致页面脚本语法错误/转义值丢失——文件级 4 反斜杠修复并逐字节验证；并行进程误写 BLOCKED.md（把本执行者修改误判为外部）——已核实 mtime/diff/内容为本人操作，追加澄清结论，无阻塞。
+- 边界遵守：只改 lib/font-mask-isolated.js、test/run-tests.js(仅增 4 条)、PROGRESS.md、BLOCKED.md、evidence\FONT-implementation\**、dist\firefox\**；content-isolated.js 未动；冻结项与三处用户 dirty 未碰；不 push/merge/签名。
