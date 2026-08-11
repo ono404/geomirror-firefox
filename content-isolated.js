@@ -738,16 +738,56 @@
   }
 
   // ------------------------------------------------------------------ fonts ---
-  // One random, non-project family per document.
-  let maskedFamily = null;
-  try {
-    maskedFamily = 'zz' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-  } catch (_) {
-    maskedFamily = 'zz' + Math.random().toString(36).slice(2, 12);
+  // Unified conversion semantics (no self-made families of any kind): blocked
+  // regional families are removed from the assigned value, the input's own
+  // ordinary fallbacks are preserved, and a standard CSS generic family is
+  // used only when nothing remains (lib/font-mask-isolated.js rewriteFontSpec).
+  function maskedFont(value) {
+    return fontMaskActive() ? GeoMirrorFontMask.rewriteFontSpec(value) : value;
   }
 
-  function maskedFont(value) {
-    return fontMaskActive() ? GeoMirrorFontMask.rewriteFontSpec(value, maskedFamily) : value;
+  // Firefox 153 resolves the CSS property accessors (font, fontFamily, ...)
+  // on a SHARED per-realm named-properties object that sits between style
+  // instances and CSSStyleDeclaration.prototype (Object.getPrototypeOf(style));
+  // there is no prototype descriptor and instances carry no own accessors, so
+  // neither a prototype patch nor an instance patch can work. Redefining the
+  // two accessors ON the named-properties object covers every style object in
+  // the document, including elements created later. All of it runs in the
+  // page realm (the named-properties object is not Xray-friendly); the mask
+  // and the active gate are the only content-side pieces, exported as page-
+  // callable functions. Non-font writes and all reads go through the captured
+  // native accessors untouched.
+  function installStyleFontHook() {
+    try {
+      const maskImpl = exportFunction(function (value) {
+        return maskedFont(value);
+      }, rawWin);
+      const activeImpl = exportFunction(fontMaskActive, rawWin);
+      return makePageFn('maskImpl', 'activeImpl',
+        'var el = document.documentElement;' +
+        'var npo = el && Object.getPrototypeOf(el.style);' +
+        'if (!npo) return { font: false, fontFamily: false };' +
+        'function install(prop) {' +
+        '  var d = Object.getOwnPropertyDescriptor(npo, prop);' +
+        '  if (!d || typeof d.get !== "function" || typeof d.set !== "function") return false;' +
+        '  var origGet = d.get, origSet = d.set;' +
+        '  var fn = function (value) {' +
+        '    var v = activeImpl() ? maskImpl(String(value)) : value;' +
+        '    return origSet.call(this, v);' +
+        '  };' +
+        '  try { Object.defineProperty(fn, "name", { value: "set " + prop, configurable: true }); } catch (e) {}' +
+        '  try {' +
+        '    Object.defineProperty(npo, prop, {' +
+        '      get: origGet, set: fn, enumerable: d.enumerable, configurable: d.configurable' +
+        '    });' +
+        '    return true;' +
+        '  } catch (e) { return false; }' +
+        '}' +
+        'return { font: install("font"), fontFamily: install("fontFamily") };'
+      )(maskImpl, activeImpl);
+    } catch (_) {
+      return { font: false, fontFamily: false };
+    }
   }
 
   function applyFontPatches() {
@@ -776,9 +816,13 @@
 
     patchSetter(rawCanvas, 'font');
     patchSetter(rawOffscreen, 'font');
-    patchSetter(rawStyle, 'font');
-    patchSetter(rawStyle, 'fontFamily');
+    // style.font / style.fontFamily are NOT patchable on CSSStyleDeclaration.
+    // prototype (Firefox resolves CSS property accessors on a shared per-realm
+    // named-properties object instead — measured: prototype descriptor null,
+    // instances carry no own accessors); the named-properties object is
+    // patched directly by installStyleFontHook.
     patchSetter(rawStyle, 'cssText');
+    installStyleFontHook();
 
     if (rawStyle && typeof rawStyle.setProperty === 'function') {
       const realSetProperty = rawStyle.setProperty;

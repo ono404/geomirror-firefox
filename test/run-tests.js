@@ -347,16 +347,81 @@ test('content-inject.js passes DateTimeFormat options in the second argument whe
     'DateTimeFormat wrapper must not pass the options object as the locales argument.');
 });
 
-test('font-mask-isolated rewrites blocked fonts to the caller-supplied random family only', () => {
-  const family = 'zz' + Math.random().toString(36).slice(2, 12);
-  const out = FontMaskIso.rewriteFontSpec("72px 'PingFang SC', monospace", family);
-  assert(out.includes(family), 'blocked family must be rewritten to the random family');
-  assert(!out.includes('PingFang'), 'blocked family must not survive');
-  assert(!out.includes('GeoMirror') && !out.includes('mirror') && !out.includes('__'),
-    'no fixed sentinel or project marker may be written into the page');
-  assert.strictEqual(FontMaskIso.rewriteFontSpec('12px Arial, sans-serif', family), '12px Arial, sans-serif');
+test('font-mask-isolated conversion never invents a family: keeps input fallbacks, uses standard generics otherwise', () => {
+  // Blocked family + ordinary fallback: the fallback from the INPUT survives.
+  eq(FontMaskIso.rewriteFontSpec("72px 'PingFang SC', monospace"), "72px monospace");
+  eq(FontMaskIso.rewriteFontSpec('"Microsoft YaHei", sans-serif'), 'sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('"Helvetica Neue", "Microsoft YaHei"'), '"Helvetica Neue"');
+  // No fallback in the input: only a standard CSS generic family is used.
+  eq(FontMaskIso.rewriteFontSpec("72px 'PingFang SC'"), '72px sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('"Microsoft YaHei"'), 'sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('12px FZCustomFont'), '12px sans-serif');
+  // Vendor/Chinese families are covered too.
+  eq(FontMaskIso.rewriteFontSpec('12px 方正兰亭黑, serif'), '12px serif');
+  // No output may contain a self-made (random/fixed/UUID/hash) family.
+  for (const out of [
+    FontMaskIso.rewriteFontSpec("72px 'PingFang SC', monospace"),
+    FontMaskIso.rewriteFontSpec('"Microsoft YaHei"'),
+    FontMaskIso.rewriteFontSpec('font-family: "PingFang SC", monospace'),
+  ]) {
+    assert(!/zz[0-9a-f]{12}|GeoMirror|mirror|__|^[0-9a-f]{12,}$/i.test(out),
+      `no self-made family may appear: ${out}`);
+  }
   assert.strictEqual(FontMaskIso.containsBlockedFont("72px 'HarmonyOS Sans SC'"), true);
   assert.strictEqual(FontMaskIso.containsBlockedFont('12px Arial'), false);
+});
+
+test('font-mask-isolated conversion shares one semantic across every supported entry shape', () => {
+  // The same conversion serves Canvas/Offscreen/style.font shorthands,
+  // style.fontFamily lists, cssText declaration blocks and setProperty.
+  eq(FontMaskIso.rewriteFontSpec('16px "Microsoft YaHei", sans-serif'), '16px sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('"Microsoft YaHei", sans-serif'), 'sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('font-family: "Microsoft YaHei", sans-serif; color: rgb(1, 2, 3)'),
+    'font-family: sans-serif; color: rgb(1, 2, 3)');
+  eq(FontMaskIso.rewriteFontSpec('font: 16px "Microsoft YaHei", serif; color: red'),
+    'font: 16px serif; color: red');
+  eq(FontMaskIso.rewriteFontSpec('italic bold 16px/1.5 "PingFang SC", "Helvetica Neue"'),
+    'italic bold 16px/1.5 "Helvetica Neue"');
+  eq(FontMaskIso.rewriteFontSpec('12px SimSun, "Microsoft YaHei UI", serif'), '12px serif');
+  // Double blocked family still yields one generic.
+  eq(FontMaskIso.rewriteFontSpec('"Microsoft YaHei", "Microsoft YaHei"'), 'sans-serif');
+});
+
+test('font-mask-isolated conversion leaves non-blocked values byte-identical (mask inactive semantics)', () => {
+  eq(FontMaskIso.rewriteFontSpec('16px Arial, sans-serif'), '16px Arial, sans-serif');
+  eq(FontMaskIso.rewriteFontSpec('Arial'), 'Arial');
+  eq(FontMaskIso.rewriteFontSpec('font-family: Arial; color: blue'), 'font-family: Arial; color: blue');
+  eq(FontMaskIso.rewriteFontSpec('12px "Times New Roman", serif'), '12px "Times New Roman", serif');
+});
+
+test('content-isolated.js routes every supported font entry through the single maskedFont conversion', () => {
+  const src = readFile('content-isolated.js');
+  // One conversion entry point, gated by the active check.
+  assert(/function maskedFont\(value\) \{[\s\S]*?fontMaskActive\(\) \? GeoMirrorFontMask\.rewriteFontSpec\(value\) : value/.test(src),
+    'maskedFont must be the single conversion entry gated by fontMaskActive');
+  // Every supported entry (canvas, offscreen, cssText setter, setProperty,
+  // the named-properties hook) must call maskedFont, never rewrite directly.
+  const calls = (src.match(/maskedFont\(value\)/g) || []).length;
+  assert(calls >= 3, `maskedFont must be used by all patch sites (found ${calls})`);
+  assert(!/GeoMirrorFontMask\.rewriteFontSpec\([^)]*,\s*[^)]*\)/.test(src),
+    'rewriteFontSpec must never receive a caller-supplied family');
+});
+
+test('content-isolated.js patches style.font/fontFamily on the named-properties object, never via prototype or instance', () => {
+  const src = readFile('content-isolated.js');
+  assert(/Object\.getPrototypeOf\(el\.style\)/.test(src),
+    'the shared named-properties object must be captured for the font/fontFamily hook');
+  assert(/installStyleFontHook\(\);/.test(src), 'the named-properties hook must be installed');
+  assert(!/patchSetter\(rawStyle, 'font'\)/.test(src) && !/patchSetter\(rawStyle, 'fontFamily'\)/.test(src),
+    'prototype patchSetter for font/fontFamily must be gone (no descriptor exists in Firefox)');
+});
+
+test('content-isolated.js generates no self-made family of any kind', () => {
+  const src = readFile('content-isolated.js');
+  assert(!src.includes('randomUUID'), 'no crypto.randomUUID family generation');
+  assert(!src.includes('maskedFamily'), 'no maskedFamily variable');
+  assert(!/zz'?\s*\+/.test(src), 'no zz-prefixed family construction');
+  assert(!/Math\.random\(\).*font|font.*Math\.random\(\)/.test(src), 'no random font family');
 });
 
 test('font-mask-isolated profile detection matches the shared module', () => {
