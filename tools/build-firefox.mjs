@@ -26,10 +26,11 @@ const ROOT = resolve(__dirname, '..');
 const OUT = resolve(ROOT, 'dist', 'firefox');
 
 // Top-level files that must ship in the Firefox package.
+// Firefox runs the isolated-world injector only: the Chrome MAIN-world
+// injector and its DOM-attribute bridge are intentionally not packaged.
 const FILES = [
   'background.js',
-  'content-bridge.js',
-  'content-inject.js',
+  'content-isolated.js',
   'popup.html',
   'popup.css',
   'popup.js',

@@ -7,6 +7,7 @@ const path = require('path');
 const TZ = require(path.join(__dirname, '..', 'lib', 'timezone.js'));
 const Locale = require(path.join(__dirname, '..', 'lib', 'locale.js'));
 const Fonts = require(path.join(__dirname, '..', 'lib', 'font-mask.js'));
+const FontMaskIso = require(path.join(__dirname, '..', 'lib', 'font-mask-isolated.js'));
 const IPLoc = require(path.join(__dirname, '..', 'lib', 'providers.js'));
 
 let passed = 0;
@@ -219,24 +220,18 @@ test('firefox manifest source exists and is shaped for Firefox MV3', () => {
   });
 });
 
-test('firefox manifest preserves content-script worlds and order', () => {
+test('firefox manifest keeps a single ISOLATED content script with the isolated injector', () => {
   const ff = require(path.join(__dirname, '..', 'manifest.firefox.json'));
-  assert(Array.isArray(ff.content_scripts) && ff.content_scripts.length === 2,
-    'Firefox manifest must keep both content scripts');
-  const main = ff.content_scripts.find((s) => s.world === 'MAIN');
-  const isolated = ff.content_scripts.find((s) => s.world === 'ISOLATED');
-  assert(main, 'Firefox MAIN-world content script missing');
-  assert(isolated, 'Firefox ISOLATED-world content script missing');
-  eq(main.js, ['lib/timezone.js', 'lib/font-mask.js', 'content-inject.js']);
-  eq(isolated.js, ['content-bridge.js']);
-  // Order: MAIN first, ISOLATED second (matches Chrome).
-  assert(ff.content_scripts[0].world === 'MAIN', 'Firefox content_scripts[0] should be MAIN');
-  assert(ff.content_scripts[1].world === 'ISOLATED', 'Firefox content_scripts[1] should be ISOLATED');
-  for (const s of ff.content_scripts) {
-    eq(s.run_at, 'document_start');
-    eq(s.all_frames, true);
-    eq(s.matches, ['<all_urls>']);
-  }
+  assert(Array.isArray(ff.content_scripts) && ff.content_scripts.length === 1,
+    'Firefox manifest must keep exactly one content script (isolated only)');
+  const isolated = ff.content_scripts[0];
+  eq(isolated.world, 'ISOLATED');
+  eq(isolated.js, ['lib/font-mask-isolated.js', 'content-isolated.js']);
+  assert(!ff.content_scripts.some((s) => s.world === 'MAIN'),
+    'Firefox manifest must not run a MAIN-world content script');
+  eq(isolated.run_at, 'document_start');
+  eq(isolated.all_frames, true);
+  eq(isolated.matches, ['<all_urls>']);
 });
 
 test('background.js guards importScripts for both worker and event-page runtimes', () => {
@@ -267,6 +262,11 @@ test('background.js keeps Accept-Language controlled by language switch, not loc
 function readInject() {
   const fs = require('fs');
   return fs.readFileSync(path.join(__dirname, '..', 'content-inject.js'), 'utf8');
+}
+
+function readFile(rel) {
+  const fs = require('fs');
+  return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 }
 
 test('content-inject.js captures originals for Date, Intl, navigator language, geolocation, and permissions before patching', () => {
@@ -345,6 +345,261 @@ test('content-inject.js passes DateTimeFormat options in the second argument whe
     'DateTimeFormat wrapper must call new realDTF(undefined, opts) so injected timeZone is treated as options when language spoof is off.');
   assert(!/localeArg\s*===\s*undefined\)\s*return\s+new\s+realDTF\(opts\)/.test(src),
     'DateTimeFormat wrapper must not pass the options object as the locales argument.');
+});
+
+test('font-mask-isolated rewrites blocked fonts to the caller-supplied random family only', () => {
+  const family = 'zz' + Math.random().toString(36).slice(2, 12);
+  const out = FontMaskIso.rewriteFontSpec("72px 'PingFang SC', monospace", family);
+  assert(out.includes(family), 'blocked family must be rewritten to the random family');
+  assert(!out.includes('PingFang'), 'blocked family must not survive');
+  assert(!out.includes('GeoMirror') && !out.includes('mirror') && !out.includes('__'),
+    'no fixed sentinel or project marker may be written into the page');
+  assert.strictEqual(FontMaskIso.rewriteFontSpec('12px Arial, sans-serif', family), '12px Arial, sans-serif');
+  assert.strictEqual(FontMaskIso.containsBlockedFont("72px 'HarmonyOS Sans SC'"), true);
+  assert.strictEqual(FontMaskIso.containsBlockedFont('12px Arial'), false);
+});
+
+test('font-mask-isolated profile detection matches the shared module', () => {
+  assert.strictEqual(FontMaskIso.isChineseProfile('zh-CN', 'Asia/Shanghai'), true);
+  assert.strictEqual(FontMaskIso.isChineseProfile('ja-JP', 'Asia/Tokyo'), false);
+  assert.strictEqual(FontMaskIso.isChineseProfile('en-US', 'Etc/UTC'), false);
+});
+
+test('content-isolated.js has no page-visible channel, global or payload', () => {
+  const src = readFile('content-isolated.js');
+  for (const marker of ['data-geomirror', 'GeoMirrorTZ', 'GeoMirrorFonts', 'CustomEvent', 'postMessage', 'MessageChannel']) {
+    assert(!src.includes(marker), `content-isolated.js must not contain ${marker}`);
+  }
+  assert(!/window\s*\.\s*addEventListener/.test(src),
+    'the injector must never register a listener on the window (no page channel)');
+  assert(!/document\s*\.\s*addEventListener/.test(src),
+    'the injector must never register a listener on the document');
+  assert(!/world:\s*['"]MAIN['"]/.test(src), 'Firefox injector must not reference the MAIN world');
+  assert(!/window\.[A-Za-z_$][A-Za-z0-9_$]*\s*=/.test(src) && !/root\.[A-Za-z_$]/.test(src),
+    'Firefox injector must not write window/global properties');
+});
+
+test('content-isolated.js delegates to captured natives and derives descriptors from originals', () => {
+  const src = readFile('content-isolated.js');
+  assert(/origTZO\.call\(this\)/.test(src), 'getTimezoneOffset wrapper must delegate to the captured native');
+  assert(/Number\.isNaN\(nativeResult\)/.test(src), 'Invalid Date NaN must pass through');
+  assert(/Object\.assign\(\{\}, origDesc, \{ value \}\)/.test(src) || /Object\.assign\(\{\}, origDesc, \{ get \}\)/.test(src),
+    'descriptors must be derived from captured originals, never hardcoded');
+  assert(/storage\.onChanged\.addListener/.test(src), 'state updates must flow through storage.onChanged');
+});
+
+// ---------------------------------------------------------------------------
+// Static structure tests for the geolocation/permission rewrite.
+// These assert DESIGN FACTS in the source; they cannot exercise Firefox
+// compartment/Xray behavior, so they are structural, not runtime, regression
+// tests. Runtime acceptance requires the controlled browser run.
+// ---------------------------------------------------------------------------
+
+test('STRUCTURAL: the spoof receiver check recognizes ONLY the extension-created fakeGeo, never via instanceof', () => {
+  const src = readFile('content-isolated.js');
+  // The classification helper takes an explicit receiver parameter and
+  // compares identity via wrappedJSObject (the receiver arrives as an Xray
+  // wrapper). getCurrentPosition routes through gcpImpl(self, ...);
+  // watchPosition and clearWatch check directly.
+  const calls = (src.match(/isFakeGeoReceiver\((this|self)\)/g) || []).length;
+  assert(calls >= 3, `expected an explicit receiver in all three method paths (found ${calls})`);
+  assert(!/isFakeGeoReceiver\(\)/.test(src), 'no receiver check may rely on implicit this');
+  assert(/function isFakeGeoReceiver\(receiver\)/.test(src),
+    'isFakeGeoReceiver must take an explicit receiver parameter');
+  assert(/gcpImpl\(this, success/.test(src), 'getCurrentPosition must pass its receiver into the spoof core');
+  // Requirement: instanceof must NOT be the spoofing criterion — it cannot
+  // distinguish fakeGeo from Object.create(Geolocation.prototype) impostors.
+  assert(!/receiver instanceof rawWin\.Geolocation/.test(src) && !/this instanceof rawWin\.Geolocation/.test(src),
+    'receiver classification must not use instanceof Geolocation');
+  assert(/receiver\.wrappedJSObject === fakeGeo/.test(src),
+    'fakeGeo recognition must compare identity through the Xray waiver');
+});
+
+test('STRUCTURAL: fakeGeo receiver with spoof disabled delegates to the captured native on the REAL Geolocation instance', () => {
+  const src = readFile('content-isolated.js');
+  // fakeGeo has no WebIDL internal slots; when spoof is off, the native
+  // method must be invoked with realGeo as the receiver.
+  assert(/delegateGeo\(realGCP, realGeo, success, error, options, argCount\)/.test(src),
+    'getCurrentPosition (spoof off) must call the native on realGeo');
+  assert(/delegateGeo\(realWP, realGeo, success, error, options, argCount\)/.test(src),
+    'watchPosition (spoof off) must call the native on realGeo');
+  assert(/Reflect\.apply\(realCW, realGeo, \[\]\)/.test(src),
+    'clearWatch with no arguments must raise the native arg-count error via realGeo');
+  assert(/Reflect\.apply\(realCW, realGeo, \[id\]\)/.test(src),
+    'clearWatch of native/unknown IDs must delegate to the native on realGeo');
+});
+
+test('STRUCTURAL: fakeGeo getCurrentPosition with invalid arguments delegates on realGeo for native parameter validation', () => {
+  const src = readFile('content-isolated.js');
+  // After the receiver is confirmed as fakeGeo, an invalid success/error/
+  // options shape must reach the native WebIDL conversion with realGeo as
+  // the receiver — fakeGeo would fail the native receiver check first,
+  // yielding the wrong error for a wrong-argument call.
+  const gcpStart = src.indexOf('function gcpImpl');
+  const gcpEnd = src.indexOf('function getCurrentPosition');
+  assert(gcpStart >= 0 && gcpEnd > gcpStart, 'gcpImpl body must be extractable');
+  const gcp = src.slice(gcpStart, gcpEnd);
+  assert(/badOpt\(options\)\) \{[\s\S]{0,800}?delegateGeo\(realGCP, realGeo, success, error, options, argCount\)/.test(gcp),
+    'gcpImpl invalid-argument branch must delegate on realGeo');
+  assert(!/badOpt\(options\)\) \{[\s\S]{0,800}?delegateGeo\(realGCP, self/.test(gcp),
+    'gcpImpl invalid-argument branch must never pass the fakeGeo receiver');
+});
+
+test('STRUCTURAL: fakeGeo watchPosition with invalid arguments delegates on realGeo for native parameter validation', () => {
+  const src = readFile('content-isolated.js');
+  const wpStart = src.indexOf('function watchPosition');
+  const wpEnd = src.indexOf('function clearWatch');
+  assert(wpStart >= 0 && wpEnd > wpStart, 'watchPosition body must be extractable');
+  const wp = src.slice(wpStart, wpEnd);
+  assert(/badOpt\(options\)\) \{[\s\S]{0,800}?delegateGeo\(realWP, realGeo, success, error, options, argCount\)/.test(wp),
+    'watchPosition invalid-argument branch must delegate on realGeo');
+  assert(!/badOpt\(options\)\) \{[\s\S]{0,800}?delegateGeo\(realWP, this/.test(wp),
+    'watchPosition invalid-argument branch must never pass the fakeGeo receiver');
+});
+
+test('STRUCTURAL: non-fakeGeo receivers keep the ORIGINAL receiver when delegating to the native', () => {
+  const src = readFile('content-isolated.js');
+  // The extension never judges whether another receiver is legal: real
+  // native instances execute, impostors ({}, Object.create(proto), proxies)
+  // make the native binding raise its own error.
+  assert(/delegateGeo\(realGCP, self, success, error, options, argCount\)/.test(src),
+    'gcpImpl must hand the original receiver to the native for non-fakeGeo receivers');
+  assert(/delegateGeo\(realWP, this, success, error, options, argCount\)/.test(src),
+    'watchPosition must hand the original receiver to the native for non-fakeGeo receivers');
+  assert(/Reflect\.apply\(realCW, this, arguments\)/.test(src),
+    'clearWatch must hand the original receiver to the native for non-fakeGeo receivers');
+});
+
+test('STRUCTURAL: spoof and native watch IDs are distinguishable by an explicit registry, not by value', () => {
+  const src = readFile('content-isolated.js');
+  // Spoof watches use a negative-ID namespace; native watch IDs are tracked
+  // separately as they come back from the native method.
+  assert(/const watchSources = new Map\(\)/.test(src), 'a watch-source registry must exist');
+  assert(/const id = -\(\+\+watchCounter\)/.test(src), 'spoof watch IDs must live in a negative namespace');
+  assert(/watchSources\.set\(id, 'spoof'\)/.test(src), 'spoof IDs must be recorded as spoof');
+  assert(/watchSources\.set\(nativeId, 'native'\)/.test(src), 'native watch IDs must be recorded as native');
+});
+
+test('STRUCTURAL: clearWatch decides ID source from the registry, never from the current switch state', () => {
+  const src = readFile('content-isolated.js');
+  const cwStart = src.indexOf('function clearWatch');
+  const cwEnd = src.indexOf('function applyGeolocation');
+  assert(cwStart >= 0 && cwEnd > cwStart, 'clearWatch body must be extractable');
+  const cw = src.slice(cwStart, cwEnd);
+  assert(/watchSources\.get\(id\)/.test(cw), 'clearWatch must consult the registry');
+  assert(!/geoActive\(\)/.test(cw), 'clearWatch must not guess the ID source from the switch state');
+  assert(/source === 'spoof'/.test(cw), 'spoof IDs must be cleaned via the fake handler registry');
+});
+
+test('STRUCTURAL: runtime behavior of non-fakeGeo receivers is NOT claimed by static tests', () => {
+  // Per Codex: "Object.create(Geolocation.prototype) must raise the native
+  // error at runtime". That is a RUNTIME acceptance item for the controlled
+  // browser run. This static test only pins the delegation DESIGN — the
+  // original receiver reaches the native method (asserted in the
+  // 'non-fakeGeo receivers keep the ORIGINAL receiver' test above). It does
+  // not and cannot claim the runtime outcome; nothing in this suite asserts
+  // that impostor receivers were observed throwing in a browser.
+  const src = readFile('content-isolated.js');
+  assert(/never construct our own TypeError|never our own TypeError/.test(src),
+    'the design must document that errors come from the native binding, not from this compartment');
+});
+
+test('STRUCTURAL: pending geolocation calls queue only synchronously extracted data, never the arguments object', () => {
+  const src = readFile('content-isolated.js');
+  // The queued re-invocation passes the extracted callbacks/options/count,
+  // not the page arguments object.
+  assert(/gcpImpl\(self, success, error, options, argCount\)/.test(src),
+    'waiter must re-invoke with extracted values only');
+  assert(!/gcpImpl\(self, args\)/.test(src), 'gcpImpl must not receive the arguments object');
+  assert(!/waiters\.push[\s\S]{0,160}?arguments/.test(src),
+    'no waiter closure may capture the page arguments object');
+  assert(/delegateGeo\(realMethod, self, success, error, options, argCount\)/.test(src),
+    'delegation must rebuild args from extracted values');
+});
+
+test('STRUCTURAL: the pending geolocation permission promise never settles via an immediate microtask', () => {
+  const src = readFile('content-isolated.js');
+  assert(!/Promise\.resolve\(\)\.then/.test(src),
+    'pending permission must not use an immediately-resolving promise chain');
+  assert(/new window\.Promise/.test(src) && /permQueryers\.push\(/.test(src),
+    'pending permission must create a page-realm promise (via the Xray window) whose executor queues the resolver');
+});
+
+test('STRUCTURAL: non-geolocation permissions keep the native delegation path', () => {
+  const src = readFile('content-isolated.js');
+  assert(/nativeQueryTramp\(json\)/.test(src), 'non-geolocation descriptors must delegate via the native trampoline');
+  assert(/nativeQueryNoArgs\(\)/.test(src), 'zero-argument queries must delegate with the native no-arg trampoline');
+  assert(/name === 'geolocation'/.test(src), 'only the geolocation descriptor name takes the spoof branch');
+});
+
+test('STRUCTURAL: fake WebIDL attribute flags are declared directly with their design basis, with no obfuscation', () => {
+  const src = readFile('content-isolated.js');
+  // Position/Coordinates/PositionError own attributes are hand-built
+  // page-realm (READONLY_ACC) with the WebIDL readonly-attribute default
+  // flags, because native instances carry them on the prototype, not as own
+  // properties. The install paths on real prototypes derive flags from
+  // captured originals (asserted above).
+  const direct = (src.match(/enumerable: true, configurable: true/g) || []).length;
+  assert(direct >= 1, `fake attribute builders must declare WebIDL default flags (found ${direct})`);
+  // P-05/P-08b: PermissionStatus.state/onchange are NOT hand-built own
+  // attributes — spoofed instances carry NO own properties and resolve both
+  // through controlled accessors on the shared native prototype, backed by
+  // the isolated-side table; their descriptors derive from the captured
+  // originals (flags preserved).
+  assert(/permStatusKey\(/.test(src) && /permStatusTable\.set\(key/.test(src) && /permStatusTable\.get\(key/.test(src),
+    'controlled PermissionStatus accessors must use the single canonical table key (no unreachable fallback)');
+  assert(/Object\.assign\(\{\}, origStateDesc, \{\s*get: exportFunction/.test(src),
+    'controlled state accessor descriptor must derive from the captured original (flags preserved)');
+  assert(/Object\.assign\(\{\}, origOnchangeDesc, \{\s*get: exportFunction[\s\S]*?set: exportFunction/.test(src),
+    'controlled onchange accessor descriptor must derive from the captured original (flags preserved)');
+  assert(!/Object\.defineProperty\(s,\s*["']state["']/.test(src),
+    'spoofed PermissionStatus instances must NOT carry an own state accessor (own-vs-prototype parity)');
+  // Round-3 REVISE: no page trampoline, no own toString shim — accessors are
+  // exportFunction results with name projected from the content function and
+  // arity matching the native (getter 0, setter 1). Key failure explicitly
+  // falls back to the native query result.
+  assert(!/makePageAccessor/.test(src) && !/return "\[native code\]";/.test(src),
+    'no page accessor trampoline and no own toString shim (both are fingerprintable)');
+  assert(/Object\.defineProperty\(stateGetter, 'name', \{ value: 'get state'/.test(src)
+      && /Object\.defineProperty\(onchangeSetter, 'name', \{ value: 'set onchange'/.test(src),
+    'accessor names must be projected from the content functions (get state / set onchange)');
+  assert(/const onchangeSetter = function \(value\)/.test(src),
+    'onchange setter must declare arity 1 like the native EventHandler setter');
+  assert(/if \(!key\) \{[\s\S]*?return nativeQueryTramp/.test(src),
+    'unregisterable status instances must explicitly fall back to the native permissions.query result');
+  assert(/s\.addEventListener\('change', dispatcher\)/.test(src),
+    'the change listener must be a fixed dispatcher registered once at instance build time');
+  assert(!/removeEventListener\('change'/.test(src),
+    'the onchange setter must not reorder the listener list (table-entry update only)');
+  assert(!/var en = true|enumerable: en/.test(src),
+    'descriptor flags must not be hidden behind variable indirection');
+});
+
+test('STRUCTURAL: permStatusKey resolves raw waiver objects and Xray wrappers to ONE canonical key', () => {
+  const src = readFile('content-isolated.js');
+  const kStart = src.indexOf('function permStatusKey');
+  const kEnd = src.indexOf('const nativeQueryTramp');
+  assert(kStart >= 0 && kEnd > kStart, 'permStatusKey body must be extractable');
+  const keyFn = src.slice(kStart, kEnd);
+  // R9-1 runtime finding: makePageFn returns RAW page-realm objects (the
+  // wrappedJSObject waiver never wraps its return values), which have no
+  // .wrappedJSObject of their own — the old null-return made every spoofed
+  // PermissionStatus fall back to the native query. The key helper must
+  // unwrap Xray wrappers AND accept the raw object itself as its own key.
+  assert(/instance\.wrappedJSObject\s*\)\s*return instance\.wrappedJSObject/.test(keyFn),
+    'Xray wrappers must be unwrapped through wrappedJSObject');
+  assert(/return instance \|\| null;/.test(keyFn),
+    'raw objects (no wrappedJSObject) must be accepted as their own key; only null/undefined yield null');
+  // Exactly ONE table-key derivation: the builder registers via the key
+  // helper, and no alternate key path (raw object or direct wrappedJSObject)
+  // may bypass it — that was the round-2 unreachable-fallback defect class.
+  assert(/permStatusTable\.set\(key/.test(src), 'the builder must register via the permStatusKey-derived key');
+  assert(!/permStatusTable\.set\(s\b/.test(src), 'no raw-object key may bypass the canonical helper');
+  assert(!/permStatusTable\.set\(s\.wrappedJSObject/.test(src), 'no direct wrappedJSObject key may bypass the canonical helper');
+  // Both read sides (state getter, onchange getter/setter) must use the same
+  // helper — no inline key derivation anywhere else.
+  assert(/const key = permStatusKey\(this\);/.test(src), 'accessors must derive the key via permStatusKey(this)');
+  assert(/const key = permStatusKey\(s\);/.test(src), 'the builder must derive the key via permStatusKey(s)');
 });
 
 if (process.exitCode) {
