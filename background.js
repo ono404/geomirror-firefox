@@ -69,7 +69,7 @@ async function syncHeaderRule(settings, override) {
         },
         condition: {
           urlFilter: '*',
-          resourceTypes: ['main_frame', 'sub_frame', 'xmlhttprequest'],
+          resourceTypes: ['main_frame', 'sub_frame', 'xmlhttprequest', 'script', 'image', 'stylesheet', 'font', 'beacon'],
         },
       }],
     });

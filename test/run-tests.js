@@ -602,6 +602,33 @@ test('STRUCTURAL: permStatusKey resolves raw waiver objects and Xray wrappers to
   assert(/const key = permStatusKey\(s\);/.test(src), 'the builder must derive the key via permStatusKey(s)');
 });
 
+// ---------------------------------------------------------------------------
+// F011 regression: the dynamic Accept-Language DNR rule must cover every
+// VERIFIED surface (main_frame / sub_frame / xmlhttprequest plus the five
+// measured gaps script / image / stylesheet / font / beacon) while keeping
+// the same rule id, the same set-value header action and the same langEnabled
+// gate. Runtime coverage of all nine surfaces is accepted separately with the
+// controlled Firefox matrix; these tests pin the rule shape in source.
+// ---------------------------------------------------------------------------
+test('F011: DNR Accept-Language rule covers exactly the eight frozen resource types', () => {
+  const src = readFile('background.js');
+  const m = src.match(/resourceTypes:\s*\[([^\]]*)\]/);
+  assert(m, 'background.js must declare a resourceTypes array inside the DNR rule');
+  const types = m[1].split(',').map((t) => t.trim().replace(/^['"]|['"]$/g, ''));
+  eq(types, ['main_frame', 'sub_frame', 'xmlhttprequest', 'script', 'image', 'stylesheet', 'font', 'beacon']);
+});
+
+test('F011: Accept-Language rule keeps rule id 9001, set-value header action and langEnabled gating', () => {
+  const src = readFile('background.js');
+  assert(/const AL_RULE_ID = 9001/.test(src), 'rule id must stay 9001');
+  assert(/id: AL_RULE_ID/.test(src), 'the addRules entry must use AL_RULE_ID');
+  assert(/removeRuleIds:\s*\[AL_RULE_ID\]/.test(src), 'the remove path must use AL_RULE_ID');
+  assert(/header:\s*'accept-language'[\s\S]{0,80}?operation:\s*'set'[\s\S]{0,80}?value:\s*al/.test(src),
+    'the rule must set accept-language to the override value');
+  assert(/if \(!\(settings && settings\.langEnabled\)\) return;/.test(src),
+    'the rule must stay gated by langEnabled');
+});
+
 if (process.exitCode) {
   console.error('\nTests failed.');
   process.exit(process.exitCode);
