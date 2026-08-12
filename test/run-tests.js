@@ -861,6 +861,72 @@ test('escape fix keeps NPO neutrality and D-FONT/F011 closure intact', () => {
   assert(!/zz[0-9a-f]{12}/.test(lib + ci), 'no zz marker anywhere');
 });
 
+test('font-mask-isolated keeps quoted comment literals unmasked (round-4 comment context)', () => {
+  // Inside a quoted string "/*...*/" is a literal character sequence, never
+  // a comment separator: the whole name takes part in the exact match and
+  // must stay byte-identical (Firefox native semantics).
+  const unchanged = [
+    '16px "Microsoft/**/YaHei", serif',
+    '16px "Microsoft/*x*/YaHei", serif',
+    '16px "Microsoft/**/ YaHei", serif',
+    '16px "Not Microsoft/**/YaHei Custom", serif',
+  ];
+  for (const input of unchanged) {
+    eq(FontMaskIso.rewriteFontSpec(input), input, `quoted comment must stay literal: ${input}`);
+    assert.strictEqual(FontMaskIso.containsBlockedFont(input), false, `must not hit: ${input}`);
+  }
+});
+
+test('font-mask-isolated masks unquoted comment separators like the equivalent escape', () => {
+  // In unquoted position a comment is whitespace for the engine, so the
+  // token sequence decodes to the blocked family and must be masked.
+  const cases = [
+    ['16px Microsoft/**/YaHei, serif', '16px serif'],
+    ['16px Microsoft/*x*/YaHei, serif', '16px serif'],
+    ['16px Microsoft/**/ YaHei, serif', '16px serif'],
+    ['italic 16px Microsoft/**/YaHei, serif', 'italic 16px serif'],
+    // Mixed list: the quoted literal stays, only the unquoted hit is removed.
+    ['16px Microsoft/**/YaHei, "PingFang/*x*/SC", serif', '16px "PingFang/*x*/SC", serif'],
+  ];
+  for (const [input, expected] of cases) {
+    eq(FontMaskIso.rewriteFontSpec(input), expected);
+    assert.strictEqual(FontMaskIso.containsBlockedFont(input), true, `must hit: ${input}`);
+  }
+});
+
+test('font-mask-isolated follows the engine for backslash+LF/CRLF/FF in both contexts', () => {
+  // Escaped newline (LF/CRLF/FF per css-syntax-3) is a line continuation:
+  // the name decodes to "MicrosoftYaHei", which is not blocked, so the
+  // value stays byte-identical. Unquoted forms are natively rejected by
+  // the engine; the extension must not rewrite them either.
+  const unchanged = [
+    '16px "Microsoft\\\nYaHei", serif',               // quoted, backslash+LF
+    '16px "Microsoft\\\r\nYaHei", serif',             // quoted, backslash+CRLF
+    '16px "Microsoft\\\fYaHei", serif',               // quoted, backslash+FF
+    '16px Microsoft\\\nYaHei, serif',                 // unquoted, backslash+LF
+    '16px Microsoft\\\r\nYaHei, serif',               // unquoted, backslash+CRLF
+    '16px Microsoft\\\fYaHei, serif',                 // unquoted, backslash+FF
+  ];
+  for (const input of unchanged) {
+    eq(FontMaskIso.rewriteFontSpec(input), input, `must stay byte-identical: ${JSON.stringify(input)}`);
+    assert.strictEqual(FontMaskIso.containsBlockedFont(input), false, `must not hit: ${JSON.stringify(input)}`);
+  }
+});
+
+test('round-4 comment fix keeps NPO neutrality and D-FONT/F011 closure intact', () => {
+  const ci = readFile('content-isolated.js');
+  assert(!/activeImpl|maskImpl/.test(ci), 'NPO mask identifiers must stay gone');
+  assert(ci.includes('return handler(this, value)'), 'NPO setter must stay a neutral delegation');
+  const tests = readFile('test/run-tests.js');
+  const head = tests.slice(0, tests.indexOf('// FONT round 2 regressions'));
+  const f011 = (head.split("test('F011: DNR Accept-Language").length - 1) +
+    (head.split("test('F011: Accept-Language rule keeps").length - 1);
+  eq(f011, 2, 'both F011 tests must still be registered');
+  const lib = readFile('lib/font-mask-isolated.js');
+  assert(!/SIZE_TOKEN/.test(lib), 'no incomplete size heuristic may return');
+  assert(!/zz[0-9a-f]{12}/.test(lib + ci), 'no zz marker anywhere');
+});
+
 
 if (process.exitCode) {
   console.error('\nTests failed.');
