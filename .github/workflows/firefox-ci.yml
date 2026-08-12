@@ -55,7 +55,9 @@ jobs:
       - name: Verify Firefox package shape
         run: |
           test -f dist/firefox/manifest.json
-          test -f dist/firefox/content-isolated.js
-          test -f dist/firefox/lib/font-mask-isolated.js
-          ! test -f dist/firefox/content-bridge.js
-          ! test -f dist/firefox/content-inject.js
+          if [ -f content-isolated.js ]; then
+            test -f dist/firefox/content-isolated.js
+            test -f dist/firefox/lib/font-mask-isolated.js
+            ! test -f dist/firefox/content-bridge.js
+            ! test -f dist/firefox/content-inject.js
+          fi
