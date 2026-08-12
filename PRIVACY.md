@@ -37,8 +37,8 @@ location.
 | `api.bigdatacloud.net` | Reverse-geocode the chosen point for display | The chosen override latitude/longitude |
 
 These are the **only** outbound connections the extension ever makes. They are
-declared in `manifest.json` under `host_permissions`, so you can verify them
-yourself and Chrome will warn you before granting them.
+declared in the source manifests under `host_permissions`, so you can verify
+them yourself and the browser can disclose the requested access.
 
 ### Firefox note on `<all_urls>` host permission
 
@@ -95,8 +95,9 @@ This extension requests the permission "read and change all your data on all
 websites". That permission is **required** because it must run a content script
 on every site to override the geolocation API — there is no narrower way to do
 this in Chrome. It is also the kind of permission a malicious extension could
-abuse, so you are right to scrutinize it. The source code is short and fully
-auditable; `content-inject.js` only patches the browser APIs documented in the
+abuse, so you are right to scrutinize it. The source code is auditable;
+Chrome / Edge use `content-inject.js`, while Firefox uses
+`content-isolated.js`. Both are limited to the browser APIs documented in the
 repository, and the content scripts never read page content.
 
 If you are privacy-conscious, you can run it unpacked from source so you can

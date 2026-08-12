@@ -26,14 +26,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["lib/timezone.js", "lib/font-mask.js", "content-inject.js"],
-      "world": "MAIN",
-      "run_at": "document_start",
-      "all_frames": true
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content-bridge.js"],
+      "js": ["lib/font-mask-isolated.js", "content-isolated.js"],
       "world": "ISOLATED",
       "run_at": "document_start",
       "all_frames": true

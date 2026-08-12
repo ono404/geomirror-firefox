@@ -9,6 +9,8 @@
 
 ## Privacy and scope
 
+- The product goal is coherent regional signals, not an undetectable or full anti-detect browser.
+- Do not add Canvas randomization, WebGL/GPU or hardware spoofing, multi-account features, or global `Function.prototype.toString` nativization.
 - No telemetry, analytics, accounts, remote configuration, or project backend.
 - Do not read page text, cookies, credentials, form data, browsing history, or user input.
 - The extension only changes documented browser-visible regional signals. Do not claim that it changes the OS, proxy route, DNS, TLS, CLI traffic, or server-side risk controls.
@@ -21,10 +23,15 @@ Run from the repository root after source changes:
 node test/run-tests.js
 node test/inject-smoke.js
 node --check background.js
+node --check content-isolated.js
 node --check content-inject.js
 node --check content-bridge.js
 node --check popup.js
 node --check lib/providers.js
+node --check lib/locale.js
+node --check lib/timezone.js
+node --check lib/font-mask.js
+node --check lib/font-mask-isolated.js
 node --check tools/build-firefox.mjs
 node --check tools/serve-firefox-verify.mjs
 node tools/build-firefox.mjs
@@ -41,6 +48,7 @@ For browser behavior changes, also verify the affected surface in Chrome / Edge 
 2. Build and run all checks above.
 3. Sign the generated Firefox package with Mozilla API credentials supplied only through environment variables.
 4. Install and manually verify the signed XPI.
-5. Store the signed package under `web-ext-artifacts/`, commit source and artifact intentionally, then push to `my-private main` when authorized.
+5. Store the signed package under `web-ext-artifacts/` and commit source and artifact intentionally.
+6. Push the current feature/release branch to `my-private` when authorized. Merge to `main` only with explicit authorization.
 
-Current status and exact commands live in `docs/FIREFOX_BUGFIX_HANDOFF.md`; architecture details live in `docs/TECHNICAL.md`.
+Current source, signed-package, and PR states are deliberately separate; see `docs/FIREFOX_BUGFIX_HANDOFF.md`. Architecture details live in `docs/TECHNICAL.md`.
