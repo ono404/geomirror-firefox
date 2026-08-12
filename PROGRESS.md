@@ -1,3 +1,27 @@
+# NAV-receiver-final 轮（2026-08-12，A2-P4 之后的复核轮）
+
+## 任务0 开工回执（≤10 行）
+- 核对全过：HEAD=94a9961…（父=0b88c0e…）；工作区仅 3 用户 dirty（.gitignore/AGENTS.md/docs/FIREFOX_BUGFIX_HANDOFF.md）；76 tests 0 FAIL；smoke PASS；Firefox 153.0.4；firefox.exe=0；8891/8894/8901/18943 空闲；TEMP 无 hermes-verify-*；production/dist/committed content-isolated.js SHA 三处一致 18fe612a…；冻结证据复核：A2-P4 judge 57ce80b6…/wrapper dc5f22a5…、D-redteam 全套 SHA 未变。
+- 线索：D-redteam（153.0.3）D-NAV-01 VERIFIED/FIX(P1)——spoof active 时 Navigator.language getter 对 {} 返回 spoof 值而非原生 TypeError。153.0.3→153.0.4 必须重新取证。
+- 目标：普通页面 probe 取证 language/languages × 各 receiver（真实 navigator / Object.create(Navigator.prototype) / {} / null / undefined / 同源 iframe 跨 realm navigator）× active/disabled/同文档切换/refresh；checker 先红后冻结；VERIFIED 才最小修复（先 native 校验 receiver 再返回 spoof，不泄露 host 值）。
+- 顺序：1 建 harness+取证+冻结判卷 → 2 仅 VERIFIED+FIX 时最小修复 + ≥3 测试（总数≥79）→ 3 明卷+单原子 commit（4 白名单）。
+- 最大风险：active 修复路径若直接调 native getter 会泄露 host 值（须先校验后丢弃再返回 spoof）；iframe 内容脚本同注入（all_frames）导致 iframe navigator getter 也被 patch（无碍本 probe 语义）；取证阶段原生 geo 不涉及（本轮无 geo）。
+
+## 任务1 取证与冻结判卷（21:1x 完成）
+- harness：evidence/NAV-receiver-final/（probe.html 普通页面 6 receiver × 2 getter × active/disabled/reenabled + refresh；server 18943；driver 串行 3 轮 fresh profile；seed-background storage 控制）。
+- 取证 3 轮全有效：6 off + 6 on 报告（≥3 fresh document off/on 对照）；每轮 newFirefoxAfter=[]；harnessExactMatch=true ×3（运行时证据逐字节属于 18fe612a…）。
+- off 基线（153.0.4 原生）：真实 navigator / 同源 iframe 跨 realm navigator 成功（host zh-CN / 6 元素数组，数组为页面 realm）；impostor/plain/null/undefined 抛 `TypeError: 'get language'/'get languages' called on an object that does not implement interface Navigator`；6 份 off 报告逐项一致。
+- **事实裁决：VERIFIED**——active/reenabled 时 6 种 receiver 全部返回 spoof（'fr-FR'/['fr-FR','fr']），非法 receiver 不抛（48 个 ILLEGAL-RECEIVER-SUCCEEDED fail）；disabled 与 off 完全一致（原生委托无回归）；identity 切换零 churn（True/True/True）。
+- **产品裁决：FIX**——(1) receiver 校验是原生 WebIDL 语义、与区域一致性无关（非必要偏离）；(2) 先调 native getter 校验再返回 spoof（低成本稳定）；(3) 只改 getter 闭包、不重装、无新 marker（无更强 marker）。
+- checker nav-receiver-v1 冻结：SHA256 96dece47…（checker-freeze.json）；红=exit 1（check-baseline-red.log：off 0 / active 48 / disabled 0 / reenabled 0）；反向验证 t1 删报告、t2 篡改非法 receiver 为成功、t3 篡改正常 navigator 值 全部 exit 1。
+
+## 任务2 最小修复（21:2x 完成）
+- 修复点：applyNavigatorLanguage 的 getImpl/langsImpl——每次调用先 `Reflect.apply(navLangDesc.get, geoKey(this), [])` 经捕获 native getter 校验 receiver（非法 receiver 抛与 off 相同 TypeError），**结果丢弃**（host 语言不泄露），再按 `langActive()` 返回 spoof 或 `.call(this)` 原生委托；getter 不重装（安装仅 bootstrap 一次）；无新增 marker/Proxy/toString shim。
+- 实现约束：旧 lang-guard 测试字面断言 `langActive() ? cache.locale : navLangDesc.get.call(this)` 与 `if (!langActive()) return navLangsDesc.get.call(this);`——采用"无条件校验 + 三元/if 字面保留"结构两全（旧测试未改仍绿；校验语义完整）。
+- 测试：只追加 3 个 NAV 回归测试（active 校验+结果丢弃、disabled 委托、storage 切换只改闭包/安装恰一次）→ **79 tests、0 FAIL**；smoke PASS。
+- 绿轮：冻结 harness 全新 profile 串行 3 轮（harnessExactMatch=true ×3，源 SHA 1f0421708b02）；**checker exit 0**（off/active/disabled/reenabled 全 0 fails）；红 raw 归档 raw-baseline-red.jsonl（58a921af…）+ check-baseline-red.log；绿 raw 036abcc1… + check-candidate-green.log；REPORT.md 已写。
+- 剩余：任务3 明卷 + 单原子 commit（4 白名单；3 用户 dirty 不入库）。
+
 # A2-P4 落地 production（实现轮，2026-08-12）
 
 ## 任务0 开工回执（≤10 行）

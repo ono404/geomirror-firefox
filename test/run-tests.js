@@ -987,6 +987,36 @@ test('lang-guard: BOOTSTRAP_PROFILE declares the neutral en-US language constant
   assert(/langEnabled: true/.test(src), 'bootstrap must enable the language spoof by default');
 });
 
+test('NAV: language/languages getters validate the receiver via the native WebIDL binding on every call, discarding the result', () => {
+  const src = readFile('content-isolated.js');
+  assert(/Reflect\.apply\(navLangDesc\.get, k, \[\]\);/.test(src) &&
+    /Reflect\.apply\(navLangsDesc\.get, k, \[\]\);/.test(src),
+    'both getters must invoke the captured native getter for receiver validation');
+  assert(!/return Reflect\.apply\(navLangDesc\.get, k, \[\]\)/.test(src) &&
+    !/return Reflect\.apply\(navLangsDesc\.get, k, \[\]\)/.test(src),
+    'the validation result must be DISCARDED (the host language must never be surfaced)');
+  assert(/const k = geoKey\(this\);/.test(src),
+    'validation must use the canonical raw key so the WebIDL binding sees the real receiver');
+});
+
+test('NAV: disabled state still delegates to the captured native getters', () => {
+  const src = readFile('content-isolated.js');
+  assert(/langActive\(\) \? cache\.locale : navLangDesc\.get\.call\(this\)/.test(src),
+    'language must keep its native delegation branch for langEnabled=false');
+  assert(/if \(!langActive\(\)\) return navLangsDesc\.get\.call\(this\);/.test(src),
+    'languages must keep its native delegation branch for langEnabled=false');
+});
+
+test('NAV: storage switching changes only the getter closures, never reinstalls them', () => {
+  const src = readFile('content-isolated.js');
+  assert((src.match(/installGetterSlot\(rawNavProto, 'language'/g) || []).length === 1 &&
+    (src.match(/installGetterSlot\(rawNavProto, 'languages'/g) || []).length === 1,
+    'each navigator language getter must be installed exactly once (bootstrap only)');
+  assert(!/applyNavigatorLanguage[\s\S]{0,300}?onChanged\.addListener/.test(src) &&
+    !/onChanged\.addListener[\s\S]{0,300}?applyNavigatorLanguage/.test(src),
+    'the storage.onChanged path must never re-apply or reinstall the language getters');
+});
+
 // ---------------------------------------------------------------------------
 // A1 watchPosition page-ID fit (positive monotonic page namespace).
 // ---------------------------------------------------------------------------

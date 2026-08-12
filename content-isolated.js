@@ -420,8 +420,18 @@
   }
 
   function applyNavigatorLanguage() {
-    const getImpl = exportFunction(function () { return langActive() ? cache.locale : navLangDesc.get.call(this); }, rawWin);
+    const getImpl = exportFunction(function () {
+      const k = geoKey(this);
+      // Validate the receiver through the captured native WebIDL binding on
+      // EVERY call: illegal receivers throw the canonical interface
+      // TypeError, identical to extension-off. The native result is
+      // discarded, so the host language never leaks (NAV-receiver-final).
+      Reflect.apply(navLangDesc.get, k, []);
+      return langActive() ? cache.locale : navLangDesc.get.call(this);
+    }, rawWin);
     const langsImpl = exportFunction(function () {
+      const k = geoKey(this);
+      Reflect.apply(navLangsDesc.get, k, []);
       if (!langActive()) return navLangsDesc.get.call(this);
       const langs = (cache.languages && cache.languages.length) ? cache.languages : [cache.locale];
       // Rebuild in the page realm: a content-side array is opaque to the page.
