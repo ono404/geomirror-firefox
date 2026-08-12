@@ -1,10 +1,15 @@
-# BLOCKED 历史（2026-08-12 已澄清）——事实时间线
+# BLOCKED.md — F006-language-guard
 
-## 2026-08-11 23:2x–00:1x 混乱段（round 3 收尾）——归因修正
-- 23:25/23:28 对 lib/font-mask-isolated.js、test/run-tests.js 的修改（decodeCssEscapes 实现 +45/-1；escape 回归测试 +69）经 Git 历史核实**来自本执行者本人**（338c2b7 提交记录）；当时因工具通道间歇故障 + 工作树与 dist 行为矛盾，曾误判为"外部进程修改"并写入 BLOCKED.md，该归因**已被推翻**。
-- 23:35 `.git/index.lock` stale lock（0 字节）为当时操作残留，2026-08-12 任务0 已删除并恢复正常 git 操作。
-- 恢复操作：`git checkout 338c2b7 -- lib/font-mask-isolated.js test/run-tests.js` 将两个文件从 58f6653 旧版残留恢复为 HEAD 内容（任务0 授权），verify exit=0，decodeCssEscapes 存在（grep=2），56 tests / smoke / build 全绿。
+## 未决技术决策
 
-## 当前状态（round 4 起点）
-- BLOCKED 无未决项；本文件保留为历史审计记录。
-- evidence\FONT-implementation\external-escape-fix\ 目录为本执行者混乱段保存的磁盘实现副本，保留供审计。
+- 无。本轮目标（空 storage 宿主语言泄漏守卫）已完成并通过冻结 judge 红→绿。
+
+## 环境记录
+
+1. Firefox 自动升级 153.0.3 → 153.0.4（`firefox.exe --version` 实测）；本轮全部证据标注 Firefox 153.0.4。
+2. wmic 本机间歇性返回空 CSV；进程归属以 node tasklist PID 集合为准，cmdline 仅作辅助（父链验证用 wmic 单 PID 查询可用）。
+3. 用户 Firefox 树（根 PID 34784）全程红线未触碰；任务期间树自增 5 个 contentproc（ppid=34784），非测试残留。
+4. bash 路径尾反斜杠会转义引号；避免路径尾 `\`。
+5. 沿用 F006 轮：fresh profile 首跑挂起需整模板 user.js（仅 direct-launch 模式；web-ext run 自带 profile 正常）；内容脚本 fetch 被静默阻断（background fetch 正常，seed 是 background fetch）；双 python server 可同时 LISTEN 8894（启动前查端口）；RDP listAddons 走 root actor（本轮未用 RDP）。
+6. Firefox 将 Intl resolvedOptions 的 Etc/UTC 规范化为 "UTC"；Collator 将 'ja-JP' 折叠为 'ja'——判卷须按规范化值。
+7. 内容脚本 storage.onChanged 生效先于 seed 的 storage-set-done POST 约 2ms——到达边界须从观测序列推导，勿用事件时钟。

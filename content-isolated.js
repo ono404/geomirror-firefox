@@ -56,6 +56,19 @@
     if (merged.tzEnabled && !merged.timezone) {
       merged.timezone = (base && base.timezone) || BOOTSTRAP_PROFILE.timezone;
     }
+    // Language guard, symmetric with the timezone guard: while language
+    // spoofing is enabled but no override locale has arrived (empty storage
+    // at first install, or a location-only provider), keep the neutral
+    // bootstrap language so the page never sees the host language (F006
+    // measured an 838-1086ms leak window; the language-guard baseline
+    // re-measured host zh-CN exposure 15-46ms after document start).
+    // langEnabled=false must NOT receive an injected locale: the language
+    // wrappers delegate to the captured natives while langActive() is
+    // false, and injecting one would turn the spoof back on.
+    if (merged.langEnabled && !merged.locale) {
+      merged.locale = (base && base.locale) || BOOTSTRAP_PROFILE.locale;
+      merged.languages = (base && base.languages) || BOOTSTRAP_PROFILE.languages;
+    }
     return merged;
   }
 

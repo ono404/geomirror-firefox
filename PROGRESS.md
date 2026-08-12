@@ -1,5 +1,9 @@
-# FONT 修复轮 4（2026-08-12，executor 轮）——基线 338c2b7c06511258fa8f60b854d3e6a854a01b1c
-- 目标：修复 CSS comment 上下文误判——`/*…*/` 只在未加引号 CSS 语法中作分隔；quoted string 内部是普通字面字符（`"Microsoft/**/YaHei"` 不得被遮罩）。顺带核对 escaped form-feed/newline 与 off 一致。
-- 顺序：任务0 恢复可信基线（lib/test 已 checkout 回 HEAD、56 tests+smoke+build 绿、decodeCssEscapes 存在、stale index.lock 已清）→ 任务1 新建 v4 判卷（server-v4/judge-v4/run-v4，18955；未改 338c2b7 取红 **32 violations**（unexpected-mask 28 + check-differs 4）并冻结 SHA：server 6112134a / judge 2cfe790f / run 810e2d36 / raw-off 8e265893 / raw-red 70f0e1a3）→ 任务2 lib 最小修复（decodeCssEscapes 增加 quoted 参数，quoted 内不删注释；familyNamesOfList/convertFamilyList 输出 quoted 标记，含声明块回调，共 6 处）→ 任务3 只增 4 测试=**60 全绿**；v4 冻结 judge 绿 **PASS 0 failures**（raw-green bfae29a4、judge-green 903a30ca）；旧 v3/v2b/r1 judge 对冻结 raw 均 PASS → 任务4 明卷全绿（tests 60、smoke、9×check、build 17、lint 0/0/0、diff --check、dist parity、frozen/dirty SHA 不变、残留 0）→ **原子 commit（最终 SHA 见 evidence\FONT-implementation\REPORT.md，基线 338c2b7 之上唯一新提交）**。
-- 最大风险：probe 模板字符串反斜杠双减半（round 3 教训）——v4 输入含 `\`+LF/CRLF/FF 控制序列，必须文件级 4 反斜杠 + 双层模拟验证；quoted/unquoted 上下文传递错误会误伤普通 family 或漏遮 unquoted 等价形式。
-- 边界遵守：只改 lib/font-mask-isolated.js、test/run-tests.js（仅增测试，HEAD 56 条不改删）、PROGRESS.md、BLOCKED.md、evidence\FONT-implementation\**、dist\firefox\**；content-isolated.js、F011、旧 v2/v2b/v3 判卷与 raw、manifest、tools、inject-smoke 冻结不动；三处用户 dirty 不碰。
+# F006-language-guard 施工进度
+
+1. 目标：关闭 langEnabled=true 且 override 未到达时的宿主语言泄漏（空 storage 时 tz 已中性但 language 泄 zh-CN）。
+2. 根因：loadFromStorage 空 override 置 locale/languages=null → langActive()=false → 语言 getter 委托原生；mergeProfile 只有 tz 守卫。
+3. 修复：mergeProfile 加与 tz 对称的 locale/languages 守卫（langEnabled=true 且 locale 缺失时回填 base 或 BOOTSTRAP_PROFILE 中性值；langEnabled=false 不注入）。改动仅 content-isolated.js。
+4. 顺序：任务0 验收全绿 → judge v2 冻结（baseline 红：on-empty 16 处 zh 泄漏 + ett 3 轮到达前泄漏）→ 实现 + 4 测试（64/64）→ candidate 矩阵 15 轮全绿 → 全套验收通过。
+5. 证据：evidence/F006-language-guard/（judge-harness-freeze.json 7 文件冻结；runtime-baseline-red.jsonl 红 / runtime.jsonl 绿；judge-v2-result 红→绿）。
+6. 最大风险已消解：UTC 规范化（Etc/UTC→"UTC"）、Collator 折叠（ja-JP→ja）、onChanged 先于 seed 事件 ~2ms（观测序列推导边界）、事件跨 run 累积（窗口隔离）。
+7. 残留：0（测试 firefox/node 零残留；用户树 PID 34784 全程未碰）；Firefox 153.0.4。

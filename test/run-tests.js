@@ -926,6 +926,62 @@ test('round-4 comment fix keeps NPO neutrality and D-FONT/F011 closure intact', 
   assert(!/SIZE_TOKEN/.test(lib), 'no incomplete size heuristic may return');
   assert(!/zz[0-9a-f]{12}/.test(lib + ci), 'no zz marker anywhere');
 });
+// ---------------------------------------------------------------------------
+// F006 language-guard regressions (empty-storage host-language leak).
+// ---------------------------------------------------------------------------
+
+test('lang-guard: mergeProfile keeps the neutral bootstrap language while langEnabled is true and no override locale has arrived', () => {
+  const src = readFile('content-isolated.js');
+  const mStart = src.indexOf('function mergeProfile');
+  const mEnd = src.indexOf('function loadFromStorage');
+  assert(mStart >= 0 && mEnd > mStart, 'mergeProfile body must be extractable');
+  const m = src.slice(mStart, mEnd);
+  assert(/if \(merged\.langEnabled && !merged\.locale\) \{/.test(m),
+    'the guard must fire exactly when langEnabled is true and the locale is missing');
+  assert(/merged\.locale = \(base && base\.locale\) \|\| BOOTSTRAP_PROFILE\.locale;/.test(m),
+    'locale must fall back to the previous profile or the neutral bootstrap');
+  assert(/merged\.languages = \(base && base\.languages\) \|\| BOOTSTRAP_PROFILE\.languages;/.test(m),
+    'languages must fall back symmetrically with locale');
+  assert(/if \(merged\.tzEnabled && !merged\.timezone\) \{/.test(m),
+    'the existing timezone guard must remain untouched');
+  assert(/if \(merged\.langEnabled && !merged\.locale\) \{/.test(m) &&
+    /merged\.tzEnabled && !merged\.timezone/.test(m),
+    'the language guard must sit next to the timezone guard as its symmetric pair');
+});
+
+test('lang-guard: a real override locale always wins over the neutral bootstrap', () => {
+  const src = readFile('content-isolated.js');
+  const mStart = src.indexOf('function mergeProfile');
+  const mEnd = src.indexOf('function loadFromStorage');
+  const m = src.slice(mStart, mEnd);
+  // The spread keeps next.locale; the guard is conditional on !merged.locale,
+  // so a provided target locale can never be clobbered back to bootstrap.
+  assert(/const merged = \{ \.\.\.base, \.\.\.next \};/.test(m),
+    'the merge must keep the next-profile spread (target wins)');
+  assert(!/merged\.locale = BOOTSTRAP_PROFILE\.locale;/.test(m) ||
+    /if \(merged\.langEnabled && !merged\.locale\) \{/.test(m),
+    'the bootstrap fallback must only ever be conditional');
+});
+
+test('lang-guard: langEnabled=false must not receive an injected locale (native delegation stays native)', () => {
+  const src = readFile('content-isolated.js');
+  const mStart = src.indexOf('function mergeProfile');
+  const mEnd = src.indexOf('function loadFromStorage');
+  const m = src.slice(mStart, mEnd);
+  assert(/if \(merged\.langEnabled && !merged\.locale\) \{/.test(m),
+    'the guard must be gated on langEnabled, so langEnabled=false never gets a locale injected');
+  assert(/langActive\(\) \? cache\.locale : navLangDesc\.get\.call\(this\)/.test(src),
+    'the language getter must keep its native delegation branch for langEnabled=false');
+  assert(/if \(!langActive\(\)\) return navLangsDesc\.get\.call\(this\);/.test(src),
+    'the languages getter must keep its native delegation branch for langEnabled=false');
+});
+
+test('lang-guard: BOOTSTRAP_PROFILE declares the neutral en-US language constants', () => {
+  const src = readFile('content-isolated.js');
+  assert(/locale: 'en-US'/.test(src), 'bootstrap locale must be neutral en-US');
+  assert(/languages: \['en-US', 'en'\]/.test(src), 'bootstrap languages must be the neutral en-US list');
+  assert(/langEnabled: true/.test(src), 'bootstrap must enable the language spoof by default');
+});
 
 
 if (process.exitCode) {
