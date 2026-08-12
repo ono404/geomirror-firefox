@@ -1,0 +1,63 @@
+name: Firefox CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firefox-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firefox:
+    name: Firefox source checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Unit and structural tests
+        run: node test/run-tests.js
+
+      - name: Injection smoke test
+        run: node test/inject-smoke.js
+
+      - name: Syntax checks
+        run: |
+          node --check background.js
+          node --check content-inject.js
+          node --check content-bridge.js
+          node --check popup.js
+          node --check lib/geo.js
+          node --check lib/providers.js
+          node --check lib/locale.js
+          node --check lib/timezone.js
+          node --check lib/font-mask.js
+          if [ -f content-isolated.js ]; then node --check content-isolated.js; fi
+          if [ -f lib/font-mask-isolated.js ]; then node --check lib/font-mask-isolated.js; fi
+
+      - name: Build Firefox package
+        run: node tools/build-firefox.mjs
+
+      - name: Verify Firefox package shape
+        run: |
+          test -f dist/firefox/manifest.json
+          if [ -f content-isolated.js ]; then
+            test -f dist/firefox/content-isolated.js
+            test -f dist/firefox/lib/font-mask-isolated.js
+            ! test -f dist/firefox/content-bridge.js
+            ! test -f dist/firefox/content-inject.js
+          fi
