@@ -25,18 +25,18 @@ The extension currently spoofs:
 3. `lib/geo.js` chooses a nearby residential-looking coordinate using Overpass/OpenStreetMap, with fallback logic when Overpass is unavailable.
 4. `lib/locale.js` infers a plausible locale bundle from country code and timezone.
 5. `background.js` stores the computed override and status in `chrome.storage.local`.
-6. `content-bridge.js` runs in the isolated extension world, reads storage, and publishes the payload to `<html data-geomirror="...">`.
-7. `content-inject.js` runs in the page MAIN world at `document_start`, installs a neutral synchronous bootstrap, reads the bridge payload, and patches browser APIs before normal page scripts run.
+6. Chrome / Edge use `content-bridge.js` in the isolated extension world to publish storage state for `content-inject.js` in the page MAIN world.
+7. Firefox uses `content-isolated.js` as its only content runtime. It reads extension storage directly and exports narrowly scoped page-callable wrappers without a DOM attribute, page global, message channel, or MAIN-world script.
 8. `background.js` installs a dynamic DNR rule to set the outgoing `Accept-Language` request header when language spoofing is enabled.
 
-## Why there are two content scripts
+## Browser-specific content architecture
 
-Chrome extension isolated-world scripts can access `chrome.storage`, but page scripts cannot see their JavaScript objects. MAIN-world scripts can patch page-visible browser APIs, but cannot use extension APIs.
+Chrome / Edge retain two content scripts because their isolated-world script can access `chrome.storage`, while the MAIN-world script patches page-visible APIs:
 
-The bridge solves this split:
+- `content-bridge.js`: isolated world, reads storage and publishes the Chrome/Edge payload.
+- `content-inject.js`: MAIN world, consumes that payload and patches browser APIs.
 
-- `content-bridge.js`: isolated world, has `chrome.storage`, writes JSON into a DOM attribute.
-- `content-inject.js`: MAIN world, reads that DOM attribute, patches page-visible APIs.
+Firefox deliberately does not use that bridge. `manifest.firefox.json` loads only `lib/font-mask-isolated.js` and `content-isolated.js` in the ISOLATED world. Firefox-specific wrapper/export mechanisms keep storage access and page-visible behavior in one runtime while avoiding the former `data-geomirror` DOM marker and page-visible transport channel.
 
 ## Timezone implementation
 
@@ -50,12 +50,12 @@ This is DST-aware. The patched `Date.prototype.getTimezoneOffset` passes `this`,
 
 ### First-read protection
 
-MAIN-world scripts cannot synchronously read `chrome.storage.local`. Without a
-bootstrap, an inline page script can read the real host timezone before the
-isolated-world bridge publishes the exit profile. GeoMirror therefore installs
-the timezone and locale wrappers immediately with a neutral `Etc/UTC` /
-`en-US` bootstrap. The stored exit-IP profile replaces it as soon as the bridge
-responds. This prevents an initial `Asia/Shanghai` / UTC+8 leak.
+Content scripts cannot synchronously obtain the stored exit profile before the
+first page script. GeoMirror therefore installs wrappers immediately with a
+neutral `Etc/UTC` / `en-US` bootstrap. Chrome / Edge replace it when the bridge
+payload arrives; Firefox replaces it when `chrome.storage.local` resolves in
+the isolated runtime. This prevents an initial host-region leak while keeping
+the asynchronous bootstrap transition explicit.
 
 The provider chain also continues past a valid location-only response until it
 finds a provider with an IANA timezone. If every timezone-capable provider
@@ -75,8 +75,9 @@ The resulting bundle is used for both JS-visible locale values and the HTTP `Acc
 ## Regional font masking
 
 When the exit profile is not Chinese and the font mask is enabled, GeoMirror
-rewrites probes for common Chinese system and vendor fonts to a deliberately
-unavailable family. Covered browser surfaces:
+rewrites exact probes for common Chinese system and vendor fonts to standard
+generic fallbacks. It does not generate per-document `zz...` family tokens.
+Covered browser surfaces:
 
 - `CanvasRenderingContext2D.font`
 - `OffscreenCanvasRenderingContext2D.font`
@@ -98,6 +99,9 @@ cannot silently drop one family. The mask automatically stays inactive for
 - Provider timezone quality depends on the IP geolocation provider.
 - Some pages can use high-entropy fingerprinting surfaces not covered here.
 - Extensions cannot modify every possible low-level browser/network signal.
+- JavaScript wrapper source/stack differences remain generically observable.
+- In Firefox, spoofed Geolocation objects cannot reproduce the native
+  `structuredClone` WebIDL internal-slot failure without a new, broader patch.
 - A browser extension cannot change the timezone seen by native programs such
   as Claude Code; it changes web-page JavaScript surfaces only.
 
@@ -109,12 +113,14 @@ Run:
 node test/run-tests.js
 node test/inject-smoke.js
 node --check background.js
+node --check content-isolated.js
 node --check content-inject.js
 node --check content-bridge.js
 node --check lib/providers.js
 node --check lib/locale.js
 node --check lib/timezone.js
 node --check lib/font-mask.js
+node --check lib/font-mask-isolated.js
 node --check popup.js
 ```
 

@@ -5,6 +5,11 @@
 node_modules/
 *.log
 
+# Local secrets
+.env
+.env.*
+!.env.example
+
 # Build output (Firefox dev package, etc.)
 dist/
 

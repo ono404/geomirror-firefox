@@ -7,7 +7,7 @@ GeoMirror is a cross-browser WebExtension for people who use proxies, VPNs, remo
 [中文说明](./README.zh-CN.md) · [Privacy policy](./PRIVACY.md) · [Technical notes](./docs/TECHNICAL.md)
 
 > [!IMPORTANT]
-> GeoMirror currently changes **browser-side signals exposed to ordinary pages in Chrome, Edge, and Firefox**. It does not change macOS / Windows settings, the Claude Code process, terminal traffic, `ANTHROPIC_BASE_URL`, DNS, TLS, or your proxy route. Claude Code / CLI network-environment support is still on the roadmap.
+> GeoMirror currently changes **browser-side signals exposed to ordinary pages in Chrome, Edge, and Firefox**. It does not change macOS / Windows settings, the Claude Code process, terminal traffic, `ANTHROPIC_BASE_URL`, DNS, TLS, or your proxy route. Native-process and CLI environment control is outside this project's scope.
 
 ---
 
@@ -115,8 +115,8 @@ Mature anti-detect browsers also match timezone/geolocation to a proxy IP and co
                                       │
                     ┌─────────────────┴─────────────────┐
                     ▼                                   ▼
-          isolated-world bridge              MAIN-world injector
-          reads extension storage            patches page-visible APIs
+        Chrome / Edge bridge + MAIN       Firefox ISOLATED-only runtime
+        content-bridge/content-inject      content-isolated.js
                     │                                   │
                     └────────────► page sees a coherent browser profile
 ```
@@ -128,8 +128,8 @@ Technical sequence:
 3. `lib/geo.js` chooses a nearby residential-looking coordinate using OpenStreetMap / Overpass.
 4. `lib/locale.js` infers a plausible locale bundle from country code + timezone.
 5. `background.js` stores the override locally and installs a dynamic `Accept-Language` header rule.
-6. `content-bridge.js` runs in the browser's isolated extension world, reads local storage, and publishes the payload into a DOM attribute.
-7. `content-inject.js` runs in the page’s MAIN world at `document_start` and patches the browser APIs before page scripts run.
+6. Chrome / Edge use `content-bridge.js` (isolated world) and `content-inject.js` (MAIN world).
+7. Firefox loads only `lib/font-mask-isolated.js` and `content-isolated.js` in the ISOLATED world. It reads storage directly and exposes narrowly scoped page-callable wrappers without a DOM marker, page global, or message transport.
 
 ## Install
 
@@ -174,6 +174,11 @@ A signed unlisted Firefox package can be installed permanently:
 ```text
 web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
 ```
+
+That signed `1.2.2` package predates the latest accepted Firefox source on
+`agent/firefox-isolated-runtime`. GitHub source updates do not update an
+installed XPI; use temporary loading for the current source until a separately
+versioned and signed package is produced.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 
@@ -239,10 +244,10 @@ Requirements:
 2. Detect the current public exit IP through Chrome's network stack with multiple IP-geolocation fallbacks. Prefer a result with a valid IANA timezone; if the first provider only has coordinates, continue instead of treating timezone:null as complete.
 3. Preserve country code, city/region/country, coordinates, ISP, and IANA timezone. Infer navigator.language, navigator.languages, default Intl locale, and Accept-Language from country + timezone.
 4. Prefer a nearby OpenStreetMap Overpass highway=residential point over the raw IP centroid, with a boundary-safe jitter fallback.
-5. Use two content scripts:
-   - an isolated-world bridge that can read chrome.storage and publish a JSON payload to the DOM;
-   - a MAIN-world injector at document_start that patches page-visible APIs.
-6. MAIN world cannot synchronously read chrome.storage. Install a neutral first-read guard while waiting for the bridge so inline scripts cannot read the host's Asia/Shanghai / UTC+8 first; replace it immediately when the exit profile arrives.
+5. Keep browser-specific content runtimes:
+   - Chrome / Edge may use an isolated-world storage bridge plus a MAIN-world injector;
+   - Firefox must use a single ISOLATED runtime with no page-visible DOM attribute, global, message, or event transport.
+6. Storage is asynchronous. Install a neutral first-read guard before ordinary page scripts can observe the host region, then update wrapper closures when the stored exit profile arrives; do not reinstall wrappers on every update.
 7. Patch:
    - navigator.geolocation.getCurrentPosition / watchPosition / clearWatch
    - navigator.permissions.query for geolocation
@@ -263,8 +268,10 @@ Requirements:
 - GeoMirror improves consistency. It is not a complete anti-fingerprinting system.
 - IP geolocation is approximate.
 - Locale inference is heuristic because IP providers do not know the real user language.
+- Generic JavaScript wrapper source/stack differences remain observable.
+- Firefox spoofed Geolocation objects cannot reproduce the native `structuredClone` WebIDL internal-slot failure without a broader patch.
 - Chrome extensions cannot inject into `chrome://`, the Chrome Web Store, or other privileged pages.
-- The current implementation cannot change the system timezone or network environment seen by Claude Code or other native processes. CLI support remains on the roadmap.
+- The implementation cannot change the system timezone or network environment seen by Claude Code or other native processes; CLI control is outside this project's scope.
 - Web Workers, SharedWorkers, Service Workers, and special `about:blank` / `srcdoc` frames may still expose the host environment.
 - Some platforms may use additional risk signals outside browser JavaScript and headers.
 
@@ -279,11 +286,13 @@ geomirror/
 ├── background.js
 ├── content-bridge.js
 ├── content-inject.js
+├── content-isolated.js
 ├── docs/
 │   └── TECHNICAL.md
 ├── lib/
 │   ├── geo.js
 │   ├── font-mask.js
+│   ├── font-mask-isolated.js
 │   ├── locale.js
 │   ├── providers.js
 │   └── timezone.js
@@ -308,12 +317,14 @@ Checks:
 node test/run-tests.js
 node test/inject-smoke.js
 node --check background.js
+node --check content-isolated.js
 node --check content-inject.js
 node --check content-bridge.js
 node --check lib/providers.js
 node --check lib/locale.js
 node --check lib/timezone.js
 node --check lib/font-mask.js
+node --check lib/font-mask-isolated.js
 node --check popup.js
 node --check tools/build-firefox.mjs
 ```

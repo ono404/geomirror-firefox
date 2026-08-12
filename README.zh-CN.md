@@ -7,7 +7,7 @@ GeoMirror 是一个跨浏览器 WebExtension，适合使用代理、VPN、远程
 [English](./README.md) · [隐私政策](./PRIVACY.md) · [技术说明](./docs/TECHNICAL.md)
 
 > [!IMPORTANT]
-> GeoMirror 当前只处理 **Chrome、Edge 和 Firefox 普通网页能够读取的浏览器端信号**。它不会改变 macOS / Windows 系统设置，也不会改变 Claude Code 进程、终端请求、`ANTHROPIC_BASE_URL`、DNS、TLS 或代理链路。Claude Code / CLI 网络环境支持仍在开发中。
+> GeoMirror 当前只处理 **Chrome、Edge 和 Firefox 普通网页能够读取的浏览器端信号**。它不会改变 macOS / Windows 系统设置，也不会改变 Claude Code 进程、终端请求、`ANTHROPIC_BASE_URL`、DNS、TLS 或代理链路。本地进程与 CLI 环境控制不属于本项目范围。
 
 ---
 
@@ -164,10 +164,10 @@ flowchart TD
   C --> E["lib/locale.js<br/>国家码 + 时区推断语言"]
   D --> F["chrome.storage.local<br/>保存 override"]
   E --> F
-  F --> G["content-bridge.js<br/>隔离世界读取 storage"]
-  G --> H["DOM data-geomirror<br/>传递 JSON payload"]
-  H --> I["content-inject.js<br/>MAIN world @ document_start"]
-  I --> J["页面看到一致的<br/>定位 / 时区 / 语言 / 请求头"]
+  F --> G["Chrome / Edge<br/>bridge + MAIN injector"]
+  F --> H["Firefox<br/>单一 ISOLATED runtime"]
+  G --> I["页面看到一致的<br/>定位 / 时区 / 语言 / 请求头"]
+  H --> I
 ```
 
 技术链路：
@@ -177,8 +177,8 @@ flowchart TD
 3. `lib/geo.js` 使用 OpenStreetMap / Overpass 在附近选择住宅感坐标。
 4. `lib/locale.js` 根据国家码 + 时区推断 locale bundle。
 5. `background.js` 把 override 存入 `chrome.storage.local`，并安装动态 `Accept-Language` 规则。
-6. `content-bridge.js` 在 isolated world 中读取 extension storage，把 payload 写入 DOM 属性。
-7. `content-inject.js` 在 MAIN world 的 `document_start` 阶段读取 payload，并覆盖页面可见 API。
+6. Chrome / Edge 使用 `content-bridge.js`（isolated world）和 `content-inject.js`（MAIN world）。
+7. Firefox 只加载 `lib/font-mask-isolated.js` 与 `content-isolated.js`，在 ISOLATED world 直接读取 storage，并通过窄范围页面可调用 wrapper 实现功能；不创建 DOM marker、页面 global 或消息传输通道。
 
 ## 安装
 
@@ -226,6 +226,8 @@ dist/firefox/manifest.json
 ```text
 web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
 ```
+
+这个已签名的 `1.2.2` 包早于 `agent/firefox-isolated-runtime` 上已验收的最新源码。GitHub 源码更新不会自动更新已安装 XPI；在产生独立升版并重新签名的新包之前，请用临时加载方式测试最新源码。
 
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
 
@@ -289,10 +291,10 @@ navigator.geolocation.getCurrentPosition(console.log, console.error)
 2. 通过 Chrome 网络栈检测当前公网出口 IP，使用多个 IP geolocation provider fallback。优先返回包含有效 IANA timezone 的结果；第一个 provider 只有经纬度时必须继续查询，不能把 timezone:null 当成成功终点。
 3. 保留国家码、城市/地区/国家、经纬度、ISP、IANA timezone。根据国家码 + timezone 推断 locale bundle：navigator.language、navigator.languages、Intl 默认 locale 和 Accept-Language。
 4. 不直接使用 IP 中心点；优先用 OpenStreetMap Overpass 查询附近 highway=residential 道路，失败时使用边界安全的 jitter fallback。
-5. 使用两个 content script：
-   - isolated-world bridge：读取 chrome.storage，把 JSON payload 发布到 DOM；
-   - MAIN-world injector：document_start 执行，patch 页面可见 API。
-6. MAIN world 无法同步读取 chrome.storage。必须在等待 bridge 时同步安装中性的首次读取保护，避免页面先读到宿主的 Asia/Shanghai / UTC+8；真实出口配置到达后立即替换。
+5. 区分浏览器运行架构：
+   - Chrome / Edge 可使用 isolated-world storage bridge + MAIN-world injector；
+   - Firefox 必须使用单一 ISOLATED runtime，不得增加页面可见 DOM 属性、global、message 或 event 传输。
+6. storage 是异步的。普通页面脚本观察宿主地区前必须先安装中性首次读取保护；真实出口配置到达后只更新 wrapper 闭包，不重复安装 wrapper。
 7. patch：
    - navigator.geolocation.getCurrentPosition / watchPosition / clearWatch
    - navigator.permissions.query 的 geolocation 结果
@@ -313,8 +315,10 @@ navigator.geolocation.getCurrentPosition(console.log, console.error)
 - GeoMirror 提升的是信号一致性，不是完整反指纹系统。
 - IP 地理位置本身是近似值。
 - 语言推断是启发式的，因为 IP provider 不知道用户真实语言。
+- 通用 JavaScript wrapper 的 source / stack 差异仍可观察。
+- Firefox 中伪造的 Geolocation 对象无法复现原生 `structuredClone` 的 WebIDL internal-slot 失败，除非引入范围更大的 patch。
 - Chrome 扩展无法注入 `chrome://`、Chrome 商店等特权页面。
-- 当前实现不能改变 Claude Code 或其他本地进程读取的系统时区和网络环境；CLI 支持正在规划中。
+- 当前实现不能改变 Claude Code 或其他本地进程读取的系统时区和网络环境；CLI 控制不属于本项目范围。
 - Web Worker、SharedWorker、Service Worker 和特殊 `about:blank` / `srcdoc` frame 仍可能暴露宿主环境。
 - 平台可能使用浏览器 JS 和请求头以外的其他风控信号。
 
@@ -329,11 +333,13 @@ geomirror/
 ├── background.js
 ├── content-bridge.js
 ├── content-inject.js
+├── content-isolated.js
 ├── docs/
 │   └── TECHNICAL.md
 ├── lib/
 │   ├── geo.js
 │   ├── font-mask.js
+│   ├── font-mask-isolated.js
 │   ├── locale.js
 │   ├── providers.js
 │   └── timezone.js
@@ -357,12 +363,14 @@ geomirror/
 node test/run-tests.js
 node test/inject-smoke.js
 node --check background.js
+node --check content-isolated.js
 node --check content-inject.js
 node --check content-bridge.js
 node --check lib/providers.js
 node --check lib/locale.js
 node --check lib/timezone.js
 node --check lib/font-mask.js
+node --check lib/font-mask-isolated.js
 node --check popup.js
 node --check tools/build-firefox.mjs
 node --check tools/serve-firefox-verify.mjs
