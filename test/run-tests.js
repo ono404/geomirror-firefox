@@ -1039,6 +1039,92 @@ test('A1: storage.onChanged replay iterates the mapping and fires spoof handlers
   assert(!/watchHandlers/.test(src), 'the old separate handler table must be gone');
 });
 
+test('P4: spoofed positions/coords are zero-own-property objects over the native prototypes', () => {
+  const src = readFile('content-isolated.js');
+  assert(/const coords = makePageFn\('coordProto', 'return Object\.create\(coordProto\);'\)\(coordProto\)/.test(src) &&
+    /const pos = makePageFn\('posProto', 'return Object\.create\(posProto\);'\)\(posProto\)/.test(src),
+    'both objects must be page-realm constructed over the native prototypes');
+  assert(!/ro\(coords,/.test(src) && !/ro\(pos,/.test(src),
+    'position/coords must carry NO own accessors (zero own properties)');
+  assert(!/window\.(posData|coordData)|globalThis\.(posData|coordData)/.test(src),
+    'the WeakMaps must never be exposed on a page global');
+});
+
+test('P4: position/coords values live in isolated-side WeakMaps keyed by the RAW object', () => {
+  const src = readFile('content-isolated.js');
+  assert(/const posData = new WeakMap\(\);/.test(src) && /const coordData = new WeakMap\(\);/.test(src),
+    'two isolated-side WeakMaps must exist');
+  assert(/coordData\.set\(ckey, \{ latitude: lat, longitude: lon, accuracy: acc,/.test(src) &&
+    /posData\.set\(pkey, \{ coords: ckey, timestamp: ts \}\);/.test(src),
+    'values must be registered under the canonical raw keys');
+  assert(/function geoKey\(instance\)/.test(src) &&
+    /if \(instance && instance\.wrappedJSObject\) return instance\.wrappedJSObject;/.test(src),
+    'key derivation must unwrap Xray wrappers to the single raw object');
+  assert(/const ckey = geoKey\(coords\);/.test(src) && /const pkey = geoKey\(pos\);/.test(src),
+    'the registration keys must come from the canonical geoKey derivation');
+});
+
+test('P4: prototype getter dispatchers replace the captured native accessors once per document', () => {
+  const src = readFile('content-isolated.js');
+  assert(/function installPositionDispatchers\(\)/.test(src), 'dispatcher installer must exist');
+  assert(/for \(const p of \['coords', 'timestamp'\]\)/.test(src) &&
+    /for \(const p of \['latitude', 'longitude', 'accuracy', 'altitude',/.test(src),
+    'the 2 position accessors and the 7 coords accessors must all be installed');
+  assert(/Object\.defineProperty\(proto, prop, Object\.assign\(\{\}, d, \{\s*get: pageDispatcher\(impl, 'get ' \+ prop\),\s*\}\)\)/.test(src),
+    'flags must derive from the captured native descriptor, never hand-built');
+  assert(/const impl = exportFunction\(function \(\) \{\s*const k = geoKey\(this\);/.test(src),
+    'the getter implementation must be an isolated-side exportFunction closure');
+});
+
+test('P4: toJSON dispatchers return page-realm dictionaries in native field order', () => {
+  const src = readFile('content-isolated.js');
+  assert(/return \{ coords: coords, timestamp: ts \};/.test(src),
+    'position toJSON must return {coords, timestamp} in native order');
+  assert(/return \{ latitude: lat, longitude: lon, altitude: alt, accuracy: acc, /.test(src) &&
+    /altitudeAccuracy: aa, heading: h, speed: s \};/.test(src),
+    'coords toJSON must return the 7 fields in native order');
+  assert(/makePageFn\('coords', 'ts',/.test(src) &&
+    /makePageFn\('lat', 'lon', 'alt', 'acc', 'aa', 'h', 's',/.test(src),
+    'dictionaries must be page-realm constructed');
+});
+
+test('P4: native miss delegation re-applies the captured accessor to the RAW receiver so the WebIDL binding decides', () => {
+  const src = readFile('content-isolated.js');
+  assert(/const k = geoKey\(this\);/.test(src) && /const e = dataMap\.get\(k\);/.test(src) &&
+    /if \(e !== undefined\) return e\[prop\];/.test(src) &&
+    /return Reflect\.apply\(origGet, k, \[\]\);/.test(src),
+    'getter miss must delegate to the captured native getter with the RAW key as receiver');
+  assert(/return Reflect\.apply\(origPosToJSON, k, \[\]\);/.test(src) &&
+    /return Reflect\.apply\(origCoordToJSON, k, \[\]\);/.test(src),
+    'toJSON miss must delegate to the captured native toJSON with the RAW key as receiver');
+});
+
+test('P4: dispatchers install on every document before page scripts can observe spoofed positions', () => {
+  const src = readFile('content-isolated.js');
+  assert(/installPositionDispatchers\(\);/.test(src),
+    'installer must be invoked in the geolocation bootstrap');
+  assert(/BEFORE any page script can observe a spoofed position/.test(src),
+    'install must be documented as document-scoped pre-observation');
+});
+
+test('P4: structuredClone/DataCloneError are NOT faked (accepted WebIDL internal-slot limitation)', () => {
+  const src = readFile('content-isolated.js');
+  assert(!/structuredClone/.test(src),
+    'no structuredClone patch may exist — the DataCloneError residue is an accepted LIMITATION');
+  assert(!/DataCloneError/.test(src),
+    'no DataCloneError fabrication may exist');
+});
+
+test('P4: READONLY_ACC own-accessor builder is retained ONLY for GeolocationPositionError', () => {
+  const src = readFile('content-isolated.js');
+  assert(/const READONLY_ACC = 'var ro = function \(o, prop, value\)/.test(src),
+    'READONLY_ACC must still exist for PositionError');
+  assert(/ro\(e, "code", code\); ro\(e, "message", message\);/.test(src),
+    'PositionError code/message stay hand-built own attributes');
+  assert(!/ro\(coords,/.test(src) && !/ro\(pos,/.test(src),
+    'position/coords must not use the own-accessor builder');
+});
+
 
 if (process.exitCode) {
   console.error('\nTests failed.');
