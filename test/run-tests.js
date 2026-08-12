@@ -490,8 +490,7 @@ test('STRUCTURAL: fakeGeo receiver with spoof disabled delegates to the captured
     'watchPosition (spoof off) must call the native on realGeo');
   assert(/Reflect\.apply\(realCW, realGeo, \[\]\)/.test(src),
     'clearWatch with no arguments must raise the native arg-count error via realGeo');
-  assert(/Reflect\.apply\(realCW, realGeo, \[id\]\)/.test(src),
-    'clearWatch of native/unknown IDs must delegate to the native on realGeo');
+  assert(/Reflect\.apply\(realCW, realGeo, \[entry\.nativeId\]\)/.test(src), 'clearWatch of native page ids must forward the INTERNAL native id on realGeo');
 });
 
 test('STRUCTURAL: fakeGeo getCurrentPosition with invalid arguments delegates on realGeo for native parameter validation', () => {
@@ -537,12 +536,15 @@ test('STRUCTURAL: non-fakeGeo receivers keep the ORIGINAL receiver when delegati
 
 test('STRUCTURAL: spoof and native watch IDs are distinguishable by an explicit registry, not by value', () => {
   const src = readFile('content-isolated.js');
-  // Spoof watches use a negative-ID namespace; native watch IDs are tracked
-  // separately as they come back from the native method.
+  // A1 (watch-position page-ID fit): spoof AND fakeGeo-native watches share
+  // ONE document-level positive monotonic page namespace; the registry
+  // records each page id's source (spoof handler vs internal native id).
+  // [MINIMAL REPLACEMENT of the old negative-namespace assertions]
   assert(/const watchSources = new Map\(\)/.test(src), 'a watch-source registry must exist');
-  assert(/const id = -\(\+\+watchCounter\)/.test(src), 'spoof watch IDs must live in a negative namespace');
-  assert(/watchSources\.set\(id, 'spoof'\)/.test(src), 'spoof IDs must be recorded as spoof');
-  assert(/watchSources\.set\(nativeId, 'native'\)/.test(src), 'native watch IDs must be recorded as native');
+  assert(/const id = \+\+watchCounter/.test(src), 'page watch IDs must be allocated from a positive monotonic counter');
+  assert(!/\(\+\+watchCounter\)/.test(src), 'the negative spoof namespace must be gone');
+  assert(/watchSources\.set\(id, \{\s*source: 'spoof',\s*handler:/.test(src), 'spoof IDs must be recorded as spoof entries');
+  assert(/watchSources\.set\(id, \{ source: 'native', nativeId \}\);/.test(src), 'native watch IDs must be recorded as native entries keyed by page id');
 });
 
 test('STRUCTURAL: clearWatch decides ID source from the registry, never from the current switch state', () => {
@@ -553,7 +555,9 @@ test('STRUCTURAL: clearWatch decides ID source from the registry, never from the
   const cw = src.slice(cwStart, cwEnd);
   assert(/watchSources\.get\(id\)/.test(cw), 'clearWatch must consult the registry');
   assert(!/geoActive\(\)/.test(cw), 'clearWatch must not guess the ID source from the switch state');
-  assert(/source === 'spoof'/.test(cw), 'spoof IDs must be cleaned via the fake handler registry');
+  // [MINIMAL REPLACEMENT: registry values are now entries, not strings]
+  assert(/entry\.source === 'spoof'/.test(cw), 'spoof page ids must be cleaned via the mapping entry');
+  assert(/realCW, realGeo, \[entry\.nativeId\]/.test(cw), 'native page ids must forward the INTERNAL native id to the captured clearWatch');
 });
 
 test('STRUCTURAL: runtime behavior of non-fakeGeo receivers is NOT claimed by static tests', () => {
@@ -981,6 +985,58 @@ test('lang-guard: BOOTSTRAP_PROFILE declares the neutral en-US language constant
   assert(/locale: 'en-US'/.test(src), 'bootstrap locale must be neutral en-US');
   assert(/languages: \['en-US', 'en'\]/.test(src), 'bootstrap languages must be the neutral en-US list');
   assert(/langEnabled: true/.test(src), 'bootstrap must enable the language spoof by default');
+});
+
+// ---------------------------------------------------------------------------
+// A1 watchPosition page-ID fit (positive monotonic page namespace).
+// ---------------------------------------------------------------------------
+
+test('A1: every fakeGeo watch returns a positive monotonic page id (no negative namespace)', () => {
+  const src = readFile('content-isolated.js');
+  const wpStart = src.indexOf('function watchPosition');
+  const wpEnd = src.indexOf('function clearWatch');
+  assert(wpStart >= 0 && wpEnd > wpStart, 'watchPosition body must be extractable');
+  const wp = src.slice(wpStart, wpEnd);
+  // The spoof branch allocates from the SAME positive counter as the
+  // native-delegation branch — one document-level namespace.
+  assert(/const id = \+\+watchCounter/.test(wp), 'the spoof branch must allocate a positive page id');
+  assert(!/const id = -/.test(wp), 'no negative-id allocation may remain in watchPosition');
+  assert(!/return nativeId/.test(wp), 'the internal native id must never be returned to the page');
+});
+
+test('A1: native-delegation watches map the internal native id to a fresh page id', () => {
+  const src = readFile('content-isolated.js');
+  const wpStart = src.indexOf('function watchPosition');
+  const wpEnd = src.indexOf('function clearWatch');
+  const wp = src.slice(wpStart, wpEnd);
+  assert(/const nativeId = delegateGeo\(realWP, realGeo, success, error, options, argCount\)/.test(wp),
+    'the disabled branch must still obtain the internal native id');
+  assert(/watchSources\.set\(id, \{ source: 'native', nativeId \}\)/.test(wp),
+    'the internal id must be stored ONLY in the mapping under the fresh page id');
+  assert(/return id;/.test(wp), 'the disabled branch must return the page id');
+  assert(!/watchSources\.set\(nativeId/.test(wp), 'the mapping must never be keyed by the internal native id');
+});
+
+test('A1: clearWatch translates page ids, forwards internal native ids, and no-ops unknown ids', () => {
+  const src = readFile('content-isolated.js');
+  const cwStart = src.indexOf('function clearWatch');
+  const cwEnd = src.indexOf('function applyGeolocation');
+  const cw = src.slice(cwStart, cwEnd);
+  assert(/if \(!entry\) return undefined/.test(cw), 'unknown or already-cleared ids must be a no-op');
+  assert(/watchSources\.delete\(id\)/.test(cw), 'a resolved page id must be removed from the mapping exactly once');
+  assert(/entry\.source === 'spoof'/.test(cw), 'spoof entries must not reach the native clearWatch');
+  assert(/Reflect\.apply\(realCW, realGeo, \[entry\.nativeId\]\)/.test(cw),
+    'native page ids must clear via the INTERNAL native id');
+  assert(!/realCW, realGeo, \[id\]/.test(cw), 'the page id must never be forwarded to the native clearWatch directly');
+});
+
+test('A1: storage.onChanged replay iterates the mapping and fires spoof handlers only', () => {
+  const src = readFile('content-isolated.js');
+  assert(/for \(const entry of watchSources\.values\(\)\)/.test(src),
+    'replay must iterate the unified mapping');
+  assert(/if \(entry\.source === 'spoof'\) \{ try \{ entry\.handler\(\); \} catch/.test(src),
+    'replay must fire spoof handlers only (native entries have no handler)');
+  assert(!/watchHandlers/.test(src), 'the old separate handler table must be gone');
 });
 
 

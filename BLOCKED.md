@@ -1,15 +1,15 @@
-# BLOCKED.md — F006-language-guard
+# BLOCKED.md — A1 watchPosition 页面 ID 原生拟合
 
 ## 未决技术决策
 
-- 无。本轮目标（空 storage 宿主语言泄漏守卫）已完成并通过冻结 judge 红→绿。
+- 无。A1 已完成并通过冻结 judge 红→绿（45 FAIL → 0 FAIL）。
 
 ## 环境记录
 
-1. Firefox 自动升级 153.0.3 → 153.0.4（`firefox.exe --version` 实测）；本轮全部证据标注 Firefox 153.0.4。
-2. wmic 本机间歇性返回空 CSV；进程归属以 node tasklist PID 集合为准，cmdline 仅作辅助（父链验证用 wmic 单 PID 查询可用）。
-3. 用户 Firefox 树（根 PID 34784）全程红线未触碰；任务期间树自增 5 个 contentproc（ppid=34784），非测试残留。
-4. bash 路径尾反斜杠会转义引号；避免路径尾 `\`。
-5. 沿用 F006 轮：fresh profile 首跑挂起需整模板 user.js（仅 direct-launch 模式；web-ext run 自带 profile 正常）；内容脚本 fetch 被静默阻断（background fetch 正常，seed 是 background fetch）；双 python server 可同时 LISTEN 8894（启动前查端口）；RDP listAddons 走 root actor（本轮未用 RDP）。
-6. Firefox 将 Intl resolvedOptions 的 Etc/UTC 规范化为 "UTC"；Collator 将 'ja-JP' 折叠为 'ja'——判卷须按规范化值。
-7. 内容脚本 storage.onChanged 生效先于 seed 的 storage-set-done POST 约 2ms——到达边界须从观测序列推导，勿用事件时钟。
+1. Firefox 153.0.4；用户树根 PID 34784 红线全程未碰（任务期间树自增 contentproc 均为用户进程，父链验证过）。
+2. **web-ext --start-url 的裸 `&` 会被截断**（F006 轮因探针参数默认值恰好掩盖）：start-url 一律经 /gate（target 参数 urllib.parse.quote 编码），gate JS 解码跳转。F006-language-guard 轮的 probe URL 同险，已在其 driver 用 gate 规避。
+3. web-ext 临时 profile 路径不含 "firefox-profile" 字样——旧 stop 匹配条件漏杀；统一改为「tasklist before-set + `-start-debugger-server` + 非 contentproc」判定，taskkill 返回码检查 + 6 次重试。
+4. wmic 本机间歇返回空 CSV；进程归属以 node tasklist 为准。
+5. patch 工具对 new_string 的正则反斜杠翻倍落盘（本轮回踩）：含正则字面量的断言一律用 python 按行号重写（raw string），不经过 patch 层。
+6. 探针陷阱：clear 循环不得遍历正在增长的 log（recordClear 也 push）——用 watch ID 快照数组。
+7. 判卷要点：partial 快照报告不参与判定；watchSources 值已从字符串升级为 entry 对象。

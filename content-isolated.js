@@ -110,7 +110,9 @@
     if (!(changes.override || changes.settings)) return;
     chrome.storage.local.get(['override', 'settings'], (data) => {
       loadFromStorage(data);
-      for (const id of Object.keys(watchHandlers)) { try { watchHandlers[id](); } catch (_) {} }
+      for (const entry of watchSources.values()) {
+        if (entry.source === 'spoof') { try { entry.handler(); } catch (_) {} }
+      }
     });
   });
   // Safety net: never keep queued geolocation callbacks or permission
@@ -317,13 +319,15 @@
   }
 
   // ---------------------------------------------------------- geolocation ----
-  const watchHandlers = {};
+  // Page-visible watch-ID namespace (A1): ONE document-level, positive,
+  // monotonically increasing, never-reused namespace for every id handed to
+  // the page — spoof watches AND native watches created through fakeGeo.
+  // The mapping records the source of each page id; internal native ids
+  // live ONLY inside the mapping and are never returned to the page.
+  // clearWatch resolves the source from this mapping, never from the
+  // current switch state.
+  const watchSources = new Map();   // pageId -> {source:'spoof', handler} | {source:'native', nativeId}
   let watchCounter = 0;
-  // Watch-ID source registry: 'spoof' (negative-ID namespace created by this
-  // extension) vs 'native' (IDs returned by the captured native watchPosition
-  // while spoof is disabled). clearWatch decides from this registry, never
-  // from the current switch state.
-  const watchSources = new Map();
 
   // Real-shaped Geolocation instance: its prototype IS the native
   // Geolocation.prototype, so brand / instanceof / getPrototypeOf / ownKeys
@@ -480,19 +484,25 @@
     }
     if (!geoActive()) {
       // fakeGeo receiver with spoof disabled: native watch on the REAL
-      // Geolocation instance; its returned ID is tracked as native.
+      // Geolocation instance. The internal native id is mapped to a fresh
+      // page id and NEVER returned to the page directly (A1: the page
+      // must not be able to tell spoof and native watches apart by id
+      // shape — both live in the same positive namespace).
       const nativeId = delegateGeo(realWP, realGeo, success, error, options, argCount);
-      if (typeof nativeId === 'number') watchSources.set(nativeId, 'native');
-      return nativeId;
+      const id = ++watchCounter;
+      if (typeof nativeId === 'number') watchSources.set(id, { source: 'native', nativeId });
+      return id;
     }
-    // Spoof watch: negative-ID namespace so spoof IDs can never collide with
-    // native IDs (positive integers), and the source is recorded explicitly.
-    const id = -(++watchCounter);
-    watchSources.set(id, 'spoof');
-    watchHandlers[id] = () => {
-      if (!geoActive() || !profileReady || !cache || cache.lat == null) return;
-      try { success(buildPosition()); } catch (_) {}
-    };
+    // Spoof watch: allocate the page id FIRST, then register the handler
+    // under it. The page namespace is positive and monotonic.
+    const id = ++watchCounter;
+    watchSources.set(id, {
+      source: 'spoof',
+      handler: () => {
+        if (!geoActive() || !profileReady || !cache || cache.lat == null) return;
+        try { success(buildPosition()); } catch (_) {}
+      }
+    });
     // First fix fires immediately when the profile is usable, otherwise once
     // the profile arrives (the queued invocation reuses this receiver).
     gcpImpl(this, success, error, options, argCount);
@@ -511,19 +521,19 @@
       // instead, producing the wrong error).
       return Reflect.apply(realCW, realGeo, []);
     }
-    // Source is decided from the recorded watch registry, never from the
+    // Source is decided from the recorded watch mapping, never from the
     // current switch state: toggling spoof on/off must not make an ID from
     // the other source unreachable or misdirected.
-    const source = watchSources.get(id);
-    if (source === 'spoof') {
-      delete watchHandlers[id];
-      watchSources.delete(id);
+    const entry = watchSources.get(id);
+    if (!entry) return undefined;               // unknown/cleared: no-op
+    watchSources.delete(id);
+    if (entry.source === 'spoof') {
+      // The handler dies with the mapping entry; no native call needed.
       return undefined;
     }
-    watchSources.delete(id);
-    // Native watch IDs and unknown IDs go to the native method (unknown IDs
-    // are a no-op there, matching native clearWatch behavior).
-    return Reflect.apply(realCW, realGeo, [id]);
+    // Native page id: forward the INTERNAL native id to the captured
+    // native clearWatch (the page id itself is meaningless to it).
+    return Reflect.apply(realCW, realGeo, [entry.nativeId]);
   }
 
   function applyGeolocation() {
