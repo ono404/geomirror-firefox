@@ -176,7 +176,7 @@ web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
 ```
 
 That signed `1.2.2` package predates the latest accepted Firefox source on
-`agent/firefox-isolated-runtime`. GitHub source updates do not update an
+`main`. GitHub source updates do not update an
 installed XPI; use temporary loading for the current source until a separately
 versioned and signed package is produced.
 
