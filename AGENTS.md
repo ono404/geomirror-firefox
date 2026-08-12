@@ -4,6 +4,7 @@
 
 - `origin` is the upstream Chrome project (`Azurboy/geomirror`). Treat it as read-only unless the user explicitly asks to contribute upstream.
 - `my-private` is the user's Firefox-capable private fork. Normal project pushes go there.
+- `main` on `my-private` is the authoritative Firefox source baseline. Work on short-lived branches and merge through a pull request after Firefox CI passes; do not push directly to `main` except for an explicitly authorized emergency.
 - Preserve both browser targets: `manifest.json` is Chrome / Edge MV3; `manifest.firefox.json` is the Firefox manifest source.
 - `dist/firefox/` is generated and ignored. Signed XPI files belong in `web-ext-artifacts/`; signing credentials never belong in git.
 
@@ -49,6 +50,6 @@ For browser behavior changes, also verify the affected surface in Chrome / Edge 
 3. Sign the generated Firefox package with Mozilla API credentials supplied only through environment variables.
 4. Install and manually verify the signed XPI.
 5. Store the signed package under `web-ext-artifacts/` and commit source and artifact intentionally.
-6. Push the current feature/release branch to `my-private` when authorized. Merge to `main` only with explicit authorization.
+6. Push the current feature/release branch to `my-private`, open a pull request to `main`, and merge only after Firefox CI passes and the merge is authorized.
 
 Current source, signed-package, and PR states are deliberately separate; see `docs/FIREFOX_BUGFIX_HANDOFF.md`. Architecture details live in `docs/TECHNICAL.md`.
