@@ -5,6 +5,7 @@
 - `origin` is the upstream Chrome project (`Azurboy/geomirror`). Treat it as read-only unless the user explicitly asks to contribute upstream.
 - `my-private` is the user's Firefox-capable private fork. Normal project pushes go there.
 - `main` on `my-private` is the authoritative Firefox source baseline. Work on short-lived branches and merge through a pull request after Firefox CI passes; do not push directly to `main` except for an explicitly authorized emergency.
+- After cloning, run `node tools/install-guard.mjs`. This installs the versioned `.githooks/pre-push` guard for this clone only. It reduces accidental direct pushes to `main`; it is not GitHub branch protection and can be bypassed locally with `--no-verify`, an unconfigured clone, hook removal, or the documented emergency environment variable.
 - Preserve both browser targets: `manifest.json` is Chrome / Edge MV3; `manifest.firefox.json` is the Firefox manifest source.
 - `dist/firefox/` is generated and ignored. Signed XPI files belong in `web-ext-artifacts/`; signing credentials never belong in git.
 
@@ -35,8 +36,10 @@ node --check lib/font-mask.js
 node --check lib/font-mask-isolated.js
 node --check tools/build-firefox.mjs
 node --check tools/serve-firefox-verify.mjs
+node --check tools/install-guard.mjs
 node tools/build-firefox.mjs
 web-ext.cmd lint --source-dir dist/firefox
+git diff --check
 ```
 
 On Windows PowerShell, use `web-ext.cmd` if the execution policy blocks the `web-ext.ps1` shim.

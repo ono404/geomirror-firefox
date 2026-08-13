@@ -3,6 +3,7 @@
 ## Current source state — 2026-08-13
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
+- Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. Until Mozilla returns a newly signed XPI and that package is separately installed and verified, it remains candidate source rather than a formal release.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
@@ -14,11 +15,11 @@
 
 ## Signed-package state
 
-- Both manifests declare version `1.2.3`.
+- Both source manifests declare candidate version `1.2.4`.
 - Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi`.
 - Signed package SHA-256: `24162a2e7c313aeb0a7d8d1580b7465f6b1d7e90e335de614d31ff30b4444c55`.
 - Mozilla accepted and signed this unlisted XPI on 2026-08-13. Its package contains the Firefox isolated runtime accepted on `main`; permanent-profile installation is tracked separately from signing.
-- Historical `1.1.0`, `1.2.1`, and `1.2.2` XPI files remain audit artifacts. GitHub source changes do not update an installed add-on; future permanent updates require another version bump, signature, and installation.
+- Historical `1.1.0`, `1.2.1`, and `1.2.2` XPI files remain audit artifacts. GitHub source changes do not update an installed add-on; candidate `1.2.4` requires a new Mozilla signature and separate installation before it becomes the permanent Firefox release.
 
 ## Maintenance workflow
 
@@ -49,7 +50,34 @@ git diff --check
 4. For browser-visible changes, verify Firefox with fresh profiles, ordinary-page probes, server-observed headers, exact source SHA, and owned-process cleanup. Static analysis alone cannot prove runtime behavior.
 5. Push a short-lived feature/release branch to `my-private`, open a pull request to `main`, and merge only after Firefox CI passes and the merge is authorized. Signing and publication remain separate authorizations.
 
-GitHub branch protection and rulesets are unavailable for this private repository on the current plan (both APIs returned HTTP 403 on 2026-08-13). The pull-request and CI gate is therefore an operating rule until the repository becomes public or the account is upgraded.
+### Main push guard (GOVERNANCE MITIGATION, 2026-08-13)
+
+GitHub branch protection and rulesets are unavailable for this private repository on the current plan (both APIs returned HTTP 403 on 2026-08-13; re-verified with authenticated `gh` on 2026-08-13). The pull-request and CI gate is therefore an operating rule until the repository becomes public or the account is upgraded. A versioned repo-local guard lowers accidental-push risk:
+
+- `.githooks/pre-push` rejects direct `refs/heads/main` pushes (including deletion); feature branches and tags pass. Escape hatch: `GEOMIRROR_EMERGENCY_MAIN_PUSH=1`.
+- Install per clone: `node tools/install-guard.mjs` (repo-local `core.hooksPath`, never global).
+- Honest bypass list (every writer with push access can bypass locally; this is not branch protection):
+  1. `git push --no-verify`
+  2. a fresh clone without the install step (hook config is per-clone)
+  3. deleting `.githooks/pre-push` or `git config --local --unset core.hooksPath`
+  4. GitHub web edits (no local git involved)
+- Reverse-validated on a throwaway local bare remote: direct main push rejected, feature branch allowed, broken hook fails closed, emergency env accepted, `--no-verify` and no-guard clones bypass as documented. Evidence: `../evidence/firefox-next-maintenance/T2-main-push-guard/validation/validation.log`.
+
+## T1 Accept-Language failure semantics — retained-rule round (2026-08-13)
+
+- Previous round fixed the silent-failure class (honest error state, page/header coherence) and the Chromium `beacon→ping` runtime selection.
+- This round adds: on a REJECTED `updateDynamicRules`, the override commits to the ACTUAL dynamic rule table, never to the intended target and never to a guess:
+  - rule 9001 present -> override language fields derive from the LIVE rule value (old region stays; page language == the header the server really receives), `langEnabled` stays true, state error + `langFailed` + real reason + `[retained]`.
+  - rule 9001 absent -> language fields stripped (native page == native header), `[stripped]`.
+  - rule table unreadable -> override kept unchanged (atomic rejection leaves the table exactly as the last successful commit, so the override still matches it), explicit `[unreadable]` error; stripping could create the mismatch this handler exists to prevent.
+- All four failure paths route through the single `handleRuleFailure(override, context)` helper: refresh, onStartup re-assert, language toggle (a failed toggle also refuses to flip the setting and prevents the settings-derived `langEnabled` from overwriting the actual-table commit), and non-language settings re-assert. `content-isolated.js` needs no change (it already reads the committed override).
+- Empirical boundary (evidence `../evidence/firefox-next-maintenance/T1-dnr-accept-language/retained-rule-failure/`, also in `BLOCKED.md`): on Firefox 153 the quota check is NET — `current table + addRules − actually-removed rules ≤ 5000` — so the product's always-remove+add call with rule 9001 present in a full table SUCCEEDS (remove hits). The "new write rejected while old 9001 retained" failure is therefore not constructible through the product path on this Firefox; the constructible contract (initial Paris proven, fill-keep 5000 with 9001 retained, real harness-issued rejection with 9001 unchanged before/after, product write converging to Tokyo, recovery) is pinned by the frozen `judge-retain.py` (SHA `6b286b56a7c27979`), and the product failure path stays covered by the existing frozen `judge-failure.py` (no-9001 full table).
+
+## T1 retained-branch languages completeness (2026-08-13)
+
+- The retained branch commits the FULL ordered `navigator.languages` list of the ACTUAL rule header, never the single-item `['first']` shape: `background.js` gains a small pure parser `alLanguageList(header)` (strip `;q=`, trim, keep source order; only the project's own legal header shape is accepted). `handleRuleFailure()` retained branch now commits `locale = tags[0]`, `languages = tags`, `acceptLanguage = actual`, `langEnabled = true`; a live header that is not a legal project shape (or is missing) is NOT claimed as retained — the previous committed state is kept and the failure is reported with an explicit `[unreadable]` outcome.
+- Blind spot closed: the previous retained PASS (`judge-retain.py`) checked primary language / Intl / server header but never the full `navigator.languages` array. The supplementary frozen judge `judge-languages.py` (SHA `efad46707e78987c53b206fc7ccb18285077c2fadf9950abf493534ed37ceac4`, loader `load-bg-languages.js` `23a7917745f4e1436ec13b18d24db4c898d6140a7ff3337ba8d1a846ebdacd24`, evidence `../evidence/firefox-next-maintenance/T1-dnr-accept-language/retained-languages-final/`) executes the REAL `handleRuleFailure()` from the actual source file in a Node vm sandbox and asserts the full-array contract for Paris/Tokyo/whitespace/leading-dot-q/reversed project headers plus six abnormal shapes (unreadable, override unchanged). Reverse validation: pre-fix current RED (28 fails, `['fr-FR']`), candidate GREEN, three runtime tamper kinds (missing item / reordered / `;q=` fragment) RED (9 fails each).
+- Regression evidence: candidate Firefox full matrix 3 rounds (judge-normal PASS, judge-failure PASS) + retained 3 rounds (judge-retain PASS, judge-languages PASS incl. runtime mode: page `navigator.languages` == full ordered list of the actual server-received header, first item == `navigator.language`, marker=0); current production SHA full matrix 1 + retained 1 round (language arrays full, marker=0; pre-fix failure signature reproduced honestly); Chrome 3 + Edge 3 rounds (judge-chromium PASS). 89 static tests (85+4 new behavior tests), 0 skipped.
 
 ## Permanent Firefox release
 

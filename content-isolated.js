@@ -82,7 +82,15 @@
       acc: o ? o.acc : (s.accuracyM || 30),
       timezone: o ? o.timezone : null,
       tzEnabled: s.tzEnabled !== false,
-      langEnabled: s.langEnabled !== false,
+      // The override is the background's COMMITTED runtime state; the
+      // settings are user intent. They normally mirror each other. When the
+      // background strips the language fields after a failed header-rule
+      // update (T1-maintenance), the override's langEnabled=false must win
+      // over settings.langEnabled=true so the page language stays coherent
+      // with the real (unchanged) HTTP header — otherwise the neutral
+      // bootstrap would be re-injected and the page would claim en-US while
+      // the header is native.
+      langEnabled: o ? o.langEnabled !== false : (s.langEnabled !== false),
       fontEnabled: s.fontEnabled !== false,
       locale: o ? o.locale : null,
       languages: o ? o.languages : null,

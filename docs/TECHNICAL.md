@@ -27,7 +27,7 @@ The extension currently spoofs:
 5. `background.js` stores the computed override and status in `chrome.storage.local`.
 6. Chrome / Edge use `content-bridge.js` in the isolated extension world to publish storage state for `content-inject.js` in the page MAIN world.
 7. Firefox uses `content-isolated.js` as its only content runtime. It reads extension storage directly and exports narrowly scoped page-callable wrappers without a DOM attribute, page global, message channel, or MAIN-world script.
-8. `background.js` installs a dynamic DNR rule to set the outgoing `Accept-Language` request header when language spoofing is enabled.
+8. `background.js` installs a dynamic DNR rule to set the outgoing `Accept-Language` request header when language spoofing is enabled. Firefox uses the `beacon` resource type; Chrome / Edge use `ping` for the same `sendBeacon` traffic.
 
 ## Browser-specific content architecture
 
@@ -71,6 +71,15 @@ IP providers generally do not return a real user language. `lib/locale.js` uses 
 - fallback is `en-US,en`
 
 The resulting bundle is used for both JS-visible locale values and the HTTP `Accept-Language` header.
+
+The DNR update is the language commit point. GeoMirror atomically removes and
+adds rule 9001, retries bounded transient failures, and exposes a failure state
+instead of silently claiming success. If an update fails, it reads the live
+rule table: a retained rule keeps the complete ordered language list from its
+actual header, an absent rule delegates page language to native behavior, and
+an unreadable table keeps the last committed state. This keeps page-visible
+language and the server-observed header coherent without adding a page global,
+DOM transport, or MAIN-world bridge on Firefox.
 
 ## Regional font masking
 
