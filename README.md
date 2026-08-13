@@ -172,13 +172,12 @@ Note: temporary add-ons disappear when Firefox restarts. This is the recommended
 A signed unlisted Firefox package can be installed permanently:
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi
 ```
 
-That signed `1.2.2` package predates the latest accepted Firefox source on
-`main`. GitHub source updates do not update an
-installed XPI; use temporary loading for the current source until a separately
-versioned and signed package is produced.
+The signed `1.2.3` package contains the accepted Firefox source from `main`.
+GitHub source updates still do not update an installed XPI; future source
+changes require another version bump, signature, and installation.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 

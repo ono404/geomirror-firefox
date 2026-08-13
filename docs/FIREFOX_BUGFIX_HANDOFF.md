@@ -14,11 +14,11 @@
 
 ## Signed-package state
 
-- Both manifests still declare version `1.2.2`; the accepted source fixes do not constitute a new signed release.
-- Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi`.
-- Signed package SHA-256: `426f47c8f1ea4e63dc6f0a8e9cb1438d0228985316baae7f75def82d43957179`.
-- This unlisted XPI was installed and user-confirmed on 2026-07-16, but it predates the current source branch.
-- GitHub source changes do not update an installed add-on. A permanent update requires a version bump, fresh Mozilla signature, and installation of the new XPI.
+- Both manifests declare version `1.2.3`.
+- Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi`.
+- Signed package SHA-256: `24162a2e7c313aeb0a7d8d1580b7465f6b1d7e90e335de614d31ff30b4444c55`.
+- Mozilla accepted and signed this unlisted XPI on 2026-08-13. Its package contains the Firefox isolated runtime accepted on `main`; permanent-profile installation is tracked separately from signing.
+- Historical `1.1.0`, `1.2.1`, and `1.2.2` XPI files remain audit artifacts. GitHub source changes do not update an installed add-on; future permanent updates require another version bump, signature, and installation.
 
 ## Maintenance workflow
 

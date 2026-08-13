@@ -224,10 +224,10 @@ dist/firefox/manifest.json
 已经签名的 Firefox 安装包位于：
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.2.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi
 ```
 
-这个已签名的 `1.2.2` 包早于 `main` 上已验收的最新 Firefox 源码。GitHub 源码更新不会自动更新已安装 XPI；在产生独立升版并重新签名的新包之前，请用临时加载方式测试最新源码。
+已签名的 `1.2.3` 包包含 `main` 上已验收的 Firefox 源码。后续 GitHub 源码更新仍不会自动更新已安装 XPI；新的源码变更需要再次升版、签名并安装。
 
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
 
