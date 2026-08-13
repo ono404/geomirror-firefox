@@ -1,5 +1,12 @@
 # GeoMirror Firefox current status
 
+## Firefox 1.2.4 candidate closeout — 2026-08-13
+
+- `maint/firefox-next-maintenance` now carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation as version `1.2.4` candidate source.
+- Both source manifests are `1.2.4`; the only formally signed package remains Firefox `1.2.3` (`24162a2e…4444c55`) until the candidate is merged, signed under a separate release step, and installed.
+- Repository-local `core.hooksPath=.githooks` is installed in this clone. The guard blocks accidental direct `main` pushes but remains bypassable and is not server-side branch protection.
+- Next gate: commit the reviewed candidate, push only the maintenance branch to `my-private`, open a PR to `main`, and require Firefox CI before merge. No signed artifact may be called `1.2.4` until Mozilla actually returns it.
+
 ## Formal Firefox baseline — 2026-08-13
 
 - `main` in `ono404/geomirror-firefox` is the authoritative Firefox source baseline.
@@ -13,6 +20,247 @@
 - Firefox release `1.2.3` was built from the accepted `main` source and signed through Mozilla's unlisted channel on 2026-08-13. Permanent activation requires installing `web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi`.
 - In this maintenance workspace, historical task evidence remains outside the repository under `../evidence/`; it is not part of the GitHub source checkout. Git history preserves implementation detail.
 - Next action: maintenance through a short-lived branch and CI-gated pull request, or an explicitly authorized release/signing cycle. Do not continue anti-detect expansion.
+
+## Firefox next-maintenance round — 2026-08-13 开工回执
+
+- 基线：`main`==`my-private/main`==`a8a1af1a00c5bd3b59d9fec6487fb517d36b88de`，工作区干净。
+- 任务 0 复核：79 tests / smoke / 12 syntax / build 17 / lint 0-0-0 / `git diff --check` 全绿；`core.hooksPath` 未设；XPI `df5a29cf0eba47f89263-1.2.3.xpi` SHA-256=`24162a2e…4444c55` 不变。
+- protection/rulesets API（gh 认证）：仍 403 "Upgrade to GitHub Pro or make this repository public"。CI 工作流在 `.github/workflows/firefox-ci.yml`。
+- 本地短期分支 `maint/firefox-next-maintenance`（不 push/merge/tag/签名/发布）。
+- 三项串行：T1 DNR Accept-Language 生命周期故障 → T2 main 推送治理 → T3 wrapper/structuredClone；证据在 `../evidence/firefox-next-maintenance/**`。
+
+## T1 DNR Accept-Language — 进行中（2026-08-13）
+
+- Harness：`../evidence/firefox-next-maintenance/T1-dnr-accept-language/harness/`（server 18945 / RDP 18946 / BiDi 18947；direct launch + RDP installTemporaryAddon；production background+content+popup 逐字节复制；仅 lib/providers.js、lib/geo.js 指向本地 mock，SHA 差异已记录；真实 popup 按钮经同扩展 iframe 控制页点击）。
+- 场景：off 原生基线 / initial（fresh 初设）/ langoff↔langon（popup 语言开关）/ switched（popup 刷新切东京）/ refreshed（刷新回巴黎）/ restart（同 profile 完整重启恢复）/ fail→recover（真实 updateDynamicRules 配额拒绝）。
+- 每轮记录：getDynamicRules()、storage 状态、popup 渲染、navigator.language(s)、3 类 Intl locale、10 表面 header、marker 扫描。
+- 关键机制踩坑（已解决并记录）：153.0.4 直接启动 RDP 需 devtools.debugger.remote-enabled pref；MV3 事件页 30s 挂起（alarm 保活）；tabs/scripting.executeScript 对 moz-extension 页无权限、RDP 无 listTabs、BiDi 需显式 session.new 且不列 moz-extension context → popup 控制走同扩展 iframe 同源访问；BiDi session 间 context id 不稳定（evalurl 单会话内 find+eval）。
+- 基线矩阵 3 轮：r1/r2 完整通过（newFirefoxAfter=[]），r3 首跑遇 raw 半行竞态（harness 缺陷已修）→ 重跑中。
+- 冻结 judge：`judge-normal.py`（SHA `b20b4149…`，正常矩阵绿 exit 0）、`judge-failure.py`（SHA `e67901d8…`，故障红 exit 1：3轮×[状态仍ok静默 / 页面ja-JP vs header原生 / popup仍Active]）；反向验证 t1-t4 篡改全红、t5 合成诚实故障绿（judge 非永远红）。基线 raw 归档 `baseline-current/`（raw 3beeda4c…、acl 77fd7562…）。
+- Candidate 已实现（background.js：原子 remove+add 单次 updateDynamicRules + 3 次退避重试 + lastDnrError；refresh/onStartup/SET_SETTINGS 以规则为提交点，失败剥离 override 语言字段 + state error，popup 显示 Error；content-isolated.js 一行语义修正：langEnabled 优先读 override（否则 F006 中性守卫会重注入 en-US，页面语言与原生 header 不一致））：84 tests（+5 T1-maintenance）、smoke/syntax/build/lint/diff-check 全绿。
+- **T1 裁决：FIX**。同一冻结 judge：off/current（normal 绿 / failure 红 9 fail）→ candidate 3 轮（normal exit 0 / failure exit 0）。故障相实测：state error+langFailed:True、页面 zh-CN==header 原生（一致）、popup 显示真实 Firefox 配额错误；故障移除后恢复全目标。新页面可见面=0（normal judge marker 项 0 fail）。
+- **Chrome/Edge 验证发现两处真实缺陷（2026-08-13）**：
+  1. Chrome 151 已禁用 `--load-extension`（"not allowed in Google Chrome"），harness 改为 CDP `Extensions.loadUnpacked`（browser 级 ws）；此前 6 轮 Chrome 全部空转（扩展从未加载，/json/list 里的 chrome-extension:// 目标是内置组件扩展 Google Hangouts/Network Speech），已修复 driver 并加组件扩展误匹配防护。
+  2. **Chrome DNR `resourceTypes` 无 `beacon`**（sendBeacon 归 `ping`），含 beacon 的规则整体被拒 → 1.2.3 在 Chrome/Edge 上 AL 规则**从未生效**（被空 catch 静默吞掉的历史故障）。修复：`AL_BEACON_TYPE = (typeof browser !== 'undefined') ? 'beacon' : 'ping'`（Firefox 事件页有 browser 全局，Chromium SW 无）。
+  3. `beacon→ping` 静态替换实验（harness-pingexp，sessionA 单轮）：Firefox 接受 ping 规则但 beacon 表面回退原生 zh-CN → **Firefox 不把 sendBeacon 匹配为 ping**，静态交集列表会造成 Firefox 回归，必须运行时选择。
+- v1 候选证据已归档 `harness/v1-archive-20260813-beacon-only/`；最终源码（含 AL_BEACON_TYPE）Firefox 3 轮重跑中（同一冻结 judge 复验）；Chrome/Edge 生命周期随后用修正后的 chromium-driver 跑。
+- 剩余：Firefox 复验+judge → Chrome/Edge judge → 全量回归；T2/T3；报告。
+
+## T1 DNR Accept-Language — 完成（2026-08-13，三浏览器全绿）
+
+- **最终源码**：`background.js` 新增 `AL_BEACON_TYPE`（`_RT.getBrowserInfo` 存在→`beacon`，否则 `ping`）+ 原原子 remove+add/退避重试/诚实错误。`test/run-tests.js` F011 断言更新，84 tests。
+- **Firefox 最终复验**（getBrowserInfo 判别器源码，3 轮 12 会话，failure-r3 一次 harness flake 已定点补跑）：冻结 `judge-normal.py`（b20b4149）**PASS**、`judge-failure.py`（e67901d8）**PASS**，0 fail。
+- **Chrome 151**：`chromium/judge-chromium.py`（SHA `623d2f0b…`，证据校准冻结）**PASS**，0 fail；Edge 151 同 judge **PASS**，0 fail。各 3 off 原生基线 + 3 sessionA×5 相位（initial/langoff/langon/switched/refreshed）：语言/头/Intl/tz 收敛、DNR 结算态、storage 状态、popup、9 ACL 表面、temporal 无宿主泄漏、marker 契约（原生 globals+恰好 {GeoMirrorFonts,GeoMirrorTZ}+恰好 1 个 data-geomirror 桥属性——Chrome/Edge 既有 MAIN-world 桥设计，非本轮新面）。
+- **关键发现（harness 与产品）**：
+  1. Chrome 151 禁用 `--load-extension` → harness 改 CDP `Extensions.loadUnpacked`（Edge 同样支持）；内置组件扩展（Hangouts/Network Speech）会污染 `/json/list`，SW 目标按扩展 ID+type 匹配。
+  2. Chrome/Edge DNR 无 `beacon`（sendBeacon 归 `ping`），1.2.3 的 AL 规则在 Chromium 上从未生效（被空 catch 静默）。`beacon→ping` 静态替换实验证明 Firefox 不把 sendBeacon 匹配为 ping，故运行时选择。
+  3. Chrome 151 也有 `browser` 全局（非 chrome 别名，仅子集 API），判别器必须用 Firefox 独有 `runtime.getBrowserInfo`。
+  4. `_dbg` 追踪证明产品在 Chrome 上每次语言切换恰好 1 次原子 updateDynamicRules、值正确；先前的重复/陈旧 dnr 证据行是 harness 的 SW 唤醒竞态，judge 已按“相位结算态（最后一行）”断言（证据 DIAG-dnr-trace-20260813.md）。
+- **T1 裁决：FIX**（Firefox 故障红→绿、三浏览器生命周期一致、无新页面可见面、故障诚实报错+恢复）。
+
+## 协作情报（旁路会话 diag-al-probe，2026-08-13 15:19）— 供任何执行者使用
+
+- **决定性实验证明 AL_BEACON_TYPE（ping）修复在 Chrome 151 端到端成立**：
+  loadUnpacked 返回权威 ID → 真 SW 规则表含 9001 ping 规则（state ok / langFailed false /
+  ipCountryCode FR）→ popup（WAR 后）正常渲染 Active+Paris → gate 35s 内收敛，
+  /on/probe 到达，ACL 各表面（含 beacon 表面）header=fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7。
+  复跑：`chromium/diag-al-probe.py`（自起 server、自建 ext-al-probe、自清理）。
+- 注意：实验行落在共享 `harness/t1-run/raw.jsonl+acl.jsonl`（沿用旧 session 标记
+  `sessionA-chrome-r3`、phase=initial、fr-FR header）。最终 Firefox judge 前需按
+  13:15 先例清理/归档 sessionA-chrome-* 段；chrome/edge 轮次建议用独立 T1_RUN_DIR
+  （server.py 支持 T1_RUN_DIR env）避免混写。
+- 15:10–15:17 三轮 chrome 失败与源码无关（同源同 manifest 的实验通过）；当时 driver
+  缺 sw_wake（SW 睡着后 evalurl 全 miss）。当前 driver（15:19 版）已有 loadUnpacked
+  权威 ID + ServiceWorker.startWorker 唤醒 + popup 等待，按此流程跑 chrome 3 轮后
+  用 judge-normal 同构的 chromium judge（bucketing sessionA-chrome-*）验证。
+- 冻结 judge-normal.py 要求 off/sessionA/sessionB 各 ≥3；chrome 轮次只产 sessionA-*，
+  需独立 judge（排除 off/sessionB 基线项）或产出完整四类会话。
+
+## T2 main 推送治理 — 完成（2026-08-13，裁决 GOVERNANCE MITIGATION）
+
+- 远端能力复核（带认证 gh）：branch protection API 与 rulesets API 均 HTTP 403
+  "Upgrade to GitHub Pro or make this repository public"。服务端强制通道不可用。
+- 落地低成本版本化防误操作（不改运行代码/远端设置/不装全局 hook）：
+  - `.githooks/pre-push`：拒绝直推/删除 `refs/heads/main`；功能分支与标签放行；
+    应急逃生舱 `GEOMIRROR_EMERGENCY_MAIN_PUSH=1`（文档化）。
+  - `tools/install-guard.mjs`：repo-local `core.hooksPath=.githooks`（幂等，绝不 global）。
+  - 已在真实仓库执行安装（仅本 clone）。
+- 反向验证（一次性本地 bare remote，7/7 通过，见
+  `../evidence/firefox-next-maintenance/T2-main-push-guard/validation/validation.log`）：
+  T1 直推 main 拒绝（远端不变）/ T3a 删 main 拒绝 / T2 功能分支允许 /
+  T3b 损坏 hook fail-closed / T-EMERGENCY 应急通道通过 / T4 `--no-verify` 绕过（实测记录）/
+  T5 无 guard 新 clone 绕过（实测记录）。
+- 判定：所有写入者均可本地绕过（--no-verify/换 clone/删 hook/web 编辑）→ 非 server-side
+  强制 → GOVERNANCE MITIGATION，不得称 branch protection。文档已更新
+  `docs/FIREFOX_BUGFIX_HANDOFF.md`、`BLOCKED.md`（AGENTS.md 需用户批准后补）。
+
+## 证据污染记录（2026-08-13 15:26-15:27）
+
+- 旁路旧会话复活，其 chromium-driver 短跑向共享 `harness/t1-run/raw.jsonl+acl.jsonl`
+  追加了 `off-chrome-r1/r2`、`sessionA-chrome-r1/r2` 标记段（随后被终止）。
+- 共享 t1-run 同时含：被中断的 Firefox 最终复验（off/sessionA/sessionB 完整、
+  failure-r3 只有 marker 行）+ chrome 污染段 → **不再直接用于冻结 judge 裁决**。
+- 最终 Firefox 裁决改在隔离目录 `harness/t1-final-run/`（driver-final.py，TAG=t1-final）
+  上执行冻结 judge（judge-normal/failure 以 argv 路径传入）；t1-run 原样保留为历史。
+- 冻结 judge SHA 复验：judge-normal `b20b4149…`、judge-failure `e67901d8…`（与 PROGRESS 记录一致）。
+
+## 协作记录（会话 20260813_15xx 并行交叉验证，16:05）
+
+- 本会话此前在共享 `harness/t1-run/` 上完成了 Chrome/Edge 生命周期交叉验证：
+  `judge-chromium.py`（SHA `623d2f0b…`）chrome PASS / edge PASS，0 fail（3 off 原生基线
+  + 3 sessionA×5 相位；含 marker 契约：原生 globals+{GeoMirrorFonts,GeoMirrorTZ}+1 个
+  data-geomirror 桥属性）。**注意**：该共享文件按上文记录视为历史/污染，此结果仅作
+  独立交叉验证，不作为冻结 judge 的主链证据；主链以 chromium-driver2.py + t1-run2
+  （隔离端口）结果为准。
+- 交叉验证中发现并已写入 harness 的 Chrome 151 事实：`--load-extension` 被禁（CDP
+  `Extensions.loadUnpacked` 替代）；Chrome 151 也暴露 `browser` 全局（判别器需
+  getBrowserInfo）；DNR 无 beacon（sendBeacon 归 ping）；`_dbg` 追踪证明产品每切换
+  恰好 1 次原子 updateDynamicRules（DIAG-dnr-trace-20260813.md）。
+- 本会话已停止并行执行，等待主链（sibling 会话）完成 Chrome/Edge；T3/回归/报告
+  待协调后继续，避免双写。
+
+## T1 Firefox 最终裁决 — 完成（2026-08-13 16:00）
+
+- 干净重跑：`harness/driver-final2.py`（TAG=t1-final2，端口 18955 隔离，seed/控制页端口同步修正；
+  v2/v3 端口问题与 v3v4 混合文件已归档 `t1-final2-run-mixed-v3v4/`），12 轮全过
+  `driver complete ok_all=True`（exit 0）。
+- 冻结 judge（SHA 复验一致）：`judge-normal.py t1-final2-run/raw.jsonl t1-final2-run/acl.jsonl`
+  → **exit 0 PASS**；`judge-failure.py t1-final2-run/raw.jsonl` → **exit 0 PASS**。
+- **T1 Firefox 侧关闭：FIX 成立**（含 AL_BEACON_TYPE 运行时选择，Firefox 用 beacon、
+  Chromium 用 ping；故障注入/恢复、五种生命周期、重启恢复、页面-头部一致性、marker=0 全绿）。
+- 剩余：Chrome/Edge 生命周期（chromium-driver2.py，隔离端口 18956/18958 + t1-run2）→ T3 → 全量回归 → 报告。
+
+## T1 Chrome/Edge — 完成（2026-08-13 16:13，三浏览器全绿）
+
+- `chromium-driver2.py`（隔离端口 18956/18958、server-18956.py、独立证据 t1-run2）：
+  - Chrome：off 1 轮 + 生命周期 3 轮 → `judge-chromium.py ... chrome` **exit 0 PASS**（证据 t1-run2-chrome-pass/）。
+  - Edge：off 1 轮 + 生命周期 3 轮 → `judge-chromium.py ... edge` **exit 0 PASS**（证据 t1-run2-edge-pass/）。
+  - host 常量从各自 off 轮推导（Chrome zh-CN,zh;q=0.9；Edge zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6）。
+- harness 竞态修复（driver 侧）：翻相前 `wait_acl_surfaces()` 等待 9 个 ACL 面全部落账，
+  避免相位监视器导航中止慢尾请求丢行（access.log 显示请求到达、acl 行丢失）。
+  两轮 flake 证据已归档 t1-run2-edge-16h07-flake/、t1-run2-edge-16h09-flake/、t1-run2-16h01-flake/。
+- ServiceWorker.enable/startWorker 在 Chromium CDP 不存在（-32601）为噪音；SW 清醒窗口内 eval 有效。
+- **T1 全部完成：Firefox/Chrome/Edge 生命周期 + 故障注入 + 冻结 judge 全绿；裁决 FIX 成立。**
+
+## T3 wrapper / structuredClone — 完成（2026-08-13，裁决 KEEP LIMITATION，production diff=0）
+
+- 复用 A2 harness（端口 8891）+ 冻结 judge（SHA `641d15d3…` 逐字节一致），
+  当前源码 off/current 各 3 轮 fresh profile：
+  - 注入 sentinel 证明 current 真加载（before/after/storage-set 行齐全，getter 返回
+    伪造东京坐标）。
+  - 冻结 judge 4 组全绿 exit 0：off / on|enabled / on|disabled / on|reload 各 3 轮
+    0 fails——wrapper 表面（ownKeys=[]、toJSON、getter receiver、brand/instanceof/
+    exactProto）与原生不可区分（P4 零 own 属性架构保持）。
+  - **structuredClone 残差稳定**：原生 coords 抛 DataCloneError；伪装对象克隆成功
+    `{same:false, keys:[]}`——WebIDL internal slot 检查，JS 无法伪造。
+  - 反向验证：judge 的 load_raw() 读固定 RAW（argv 陷阱已记录）；换位篡改后
+    ownKeys 非空 → exit 1（POSITION-OWNKEYS×3）；reload toJSON 抛 → exit 1
+    （COORDS-TOJSON×3）；真实数据 exit 0。judge 非空转。
+  - 论证：闭合 structuredClone 残差必然新增 own/symbol 属性 → 更廉价 marker
+    （A2 三族架构死亡 + 第一性原理）。
+- 报告：`../evidence/firefox-next-maintenance/T3-wrapper-structuredClone/REPORT.md`。
+
+## 三项裁决汇总（2026-08-13）
+
+| 项 | 裁决 | 证据 |
+|---|---|---|
+| T1 DNR Accept-Language | **FIX**（beacon→ping 运行时选择 + 原子 DNR 提交 + 诚实错误态；三浏览器全绿） | t1-final2-run（FF）、t1-run2-chrome-pass、t1-run2-edge-pass |
+| T2 main 推送治理 | **GOVERNANCE MITIGATION**（版本化 pre-push guard，非 branch protection） | T2-main-push-guard/validation/validation.log |
+| T3 wrapper/structuredClone | **KEEP LIMITATION**（production diff=0） | T3-wrapper-structuredClone/（judge exit 0 + 反向验证红） |
+
+- 全量回归：84 tests / smoke / 13 syntax / build 17 / lint 0-0-0 / `git diff --check` clean /
+  XPI SHA `24162a2e…4444c55` 不变。未 push/merge/tag/签名/安装。
+- AGENTS.md 更新因受保护文件审批未通过而跳过（guard 文档在 FIREFOX_BUGFIX_HANDOFF.md/
+  BLOCKED.md 完整）。
+
+## 本轮：T1 最后一个缺口 —「旧9001保留+新写入拒绝」（2026-08-13 开工回执）
+
+- 复核：HEAD a8a1af1、分支 maint/firefox-next-maintenance、候选 6改+2增（与任务书一致，无外来 diff）；
+  84 tests / smoke / 13 syntax / build 17 / lint 0-0-0 / diff-check / XPI SHA 24162a2e…4444c55 全绿；
+  端口 18945-18958/8891 无残留进程。
+- 旧 failure judge 只覆盖 has9001:false（fill 先删 9001）；本轮补「9001 保留在表」场景。
+- 新 harness：`T1-dnr-accept-language/retained-rule-failure/`（端口 18965/18966/18967，隔离）。
+- 探针先行：产品形状 remove+add 在满表含 9001 时 Firefox 153 是否真拒绝（决定故障机制是否走产品自身调用）。
+
+## 探针结论（2026-08-13 17:02）— 场景边界已写入 BLOCKED.md
+
+- 4 轮实测（retained-rule-failure/，端口 18965-18967）：fill-keep 把表填到 5000 含 9001=Paris 成功；
+  **产品形状 remove+add（9001→Tokyo）在满表时被 Firefox 153 接受**（配额检查为净数语义：
+  表 + add − 实际命中 remove ≤ 5000；旧场景拒绝因 remove 不命中）。产品调用恒 remove+add 且
+  remove 恒命中 → **「9001 保留 + 产品写入拒绝」不可通过真实配额构造**（完整推理见 BLOCKED.md）。
+- 新 judge 覆盖可构造部分：初始巴黎证明 → fill-keep 5000 含 9001=Paris → harness 真实拒绝
+  （probe-reject 纯 add 超限）→ 拒绝后 9001 未变 → 产品写东京成功收敛（页面==头==规则）→
+  清表恢复。产品失败路径仍由既有 judge-failure（无 9001 满表）覆盖。
+
+## 修复落地（2026-08-13 17:15）— 失败后按实际规则表收敛
+
+- `background.js` 新增 `handleRuleFailure(override, context)`（唯一失败处理器，4 路径共用）：
+  失败后 `getDynamicRules()` 读真实规则表——9001 在表 → override 提交为**实际规则值**
+  （locale/languages/acceptLanguage 由真实值派生，langEnabled=true，页面==真实头）；
+  9001 不在表 → strip（页面原生==头原生）；读表失败 → override 保持不变（原子拒绝⇒表未变，
+  保持即与上次成功提交一致）+ 显式 [unreadable] 报错。删除无条件 strip 的 failLanguageState。
+- 4 调用点：refresh / onStartup / 语言切换（toggleFailed flag 防 settings 覆盖实际表提交）/
+  非语言设置重申。content-isolated 无需改（已读 override 提交态）。
+- 静态测试：重写 4 条 + 新增 handleRuleFailure 契约测试 → **85 tests**。
+- harness 加固：dumpDnr 裁剪为 count+9001（750KB 全量规则 post 偶发丢行）+ dump 重试兜底。
+
+## 冻结 judge-retain.py + current/candidate/篡改（2026-08-13 17:16）
+
+- **冻结**：`retained-rule-failure/judge-retain.py` SHA `6b286b56a7c27979`（先冻结后跑，复验一致）。
+  契约：初始巴黎（页面+Intl+服务端头）/ fill-keep 5000 含 9001=Paris / probe-reject 真实拒绝且
+  拒绝前后 9001 未变（failinj 行 + dump 行双证据）/ 产品写东京收敛（9001=Tokyo，页面==头，popup
+  Active，state ok）/ clear 恢复（9001=Tokyo，count 1）/ marker=0（globals 原生集+零页面面）。
+- **current（修复前）3 轮**：`retain-run-current-baseline/` → JUDGE_RETAIN PASS（exit 0）。
+  如实记录：current 在该可构造场景下也绿（产品原子调用成功收敛，不触发失败路径——场景判别性
+  受 BLOCKED.md 记录的事实限制；产品失败路径由 judge-failure 覆盖）。
+- **candidate（修复后）3 轮**：`retain-run-candidate/` → JUDGE_RETAIN PASS（exit 0）。
+- **篡改反向验证**（current 数据，5 种全红 / 未篡改绿）：t1 has9001→false 红、t2 拒绝后
+  9001 值→Tokyo 红、t3 probe-reject outcome→accepted 红、t4 fail probe 头→巴黎 红
+  （页面东京 vs 旧头不一致）、t5 fail popup→Error 红。judge 非空转。
+- 后续：candidate 全矩阵回归（off/sessionA/sessionB/failure×3 → judge-normal/failure）→
+  Chrome/Edge 各 1 轮 → 全量静态回归 → 报告。
+
+## 三浏览器回归 + 全量回归 — 完成（2026-08-13 17:41）
+
+- **Firefox candidate 全矩阵**（retain-run-fullmatrix-candidate/）：off/sessionA/sessionB/failure
+  各 3 轮 → 冻结 judge-normal **PASS**（exit 0）、judge-failure **PASS**（exit 0）。
+- **Firefox retained 3 轮**（retain-run-retained-candidate-final/）：judge-retain **PASS**（exit 0）。
+- **Chrome 3 轮**（regress-run-chrome-candidate/）+ **Edge 3 轮**（regress-run-edge-candidate/）：
+  冻结 judge-chromium **PASS / PASS**（exit 0）——ping 路径无回归。
+- **harness 竞态修复（本轮）**：(1) gate 首导航改读 /state 实际 phase（消除 sessionB 误报
+  initial 探针行）；(2) Firefox driver 移植 wait_acl_surfaces（翻转前等 9 ACL 面）；(3) **发现
+  ThreadingHTTPServer 并发 append 丢行**（access.log 有 200、acl.jsonl 无行——Windows 非原子
+  写互覆），chromium 回归用加锁 server 副本（retained-rule-failure/server-18956-retain.py +
+  chromium-driver2-retain.py，只读原文件未动）。flake 归档：t1-run2-regress-chrome-17h31-flake、
+  retain-run-fullmatrix-candidate-gateflake。
+- **全量静态回归**：85 tests / smoke / 13 syntax / build 17 / lint 0-0-0（dist/firefox 路径）/
+  `git diff --check` clean / XPI SHA `24162a2e…4444c55` 不变；端口全空、harness 残留进程=0。
+- 未 commit/push/merge/tag/签名/安装；候选源码停留工作区（默认拍板）。
+
+## 本轮：retained 分支完整 navigator.languages 一致性缺口 — 2026-08-13 开工回执
+
+- 复核：HEAD a8a1af1、分支 maint/firefox-next-maintenance、候选 6改+2增（无外来 diff）；85 tests / smoke / 13 syntax / build 17 / lint 0-0-0 / diff-check / XPI SHA 24162a2e…4444c55 全绿；端口 18945-18958/18965-18967/8891 全空、浏览器进程残留=0。
+- 缺口确认：`handleRuleFailure()` retained 分支 `override.languages = first ? [first] : null` 把完整旧头压成单项；judge-retain 只验主语言/Intl/header，未验完整 `navigator.languages`。
+- 方案：`background.js` 提取纯解析 helper `alLanguageList()`（完整有序 tag 列表，去 ;q=，非法形状→null→unreadable 不谎称 retained）；补充 judge（驱动真实 handler）先冻结后实现：current 红、candidate 绿、三类篡改红。
+- 运行时：Firefox current 生产 SHA 与 candidate 各跑 full matrix 1 轮 + retained normal 1 轮；Chrome/Edge 各 1 轮。证据 `T1-dnr-accept-language/retained-languages-final/`。
+
+## 补充 judge 冻结 + 实现落地（2026-08-13 18:15）
+
+- **冻结**：`retained-languages-final/judge-languages.py`（SHA `efad4670…cac4`）+ 配套真实函数执行器 `load-bg-languages.js`（SHA `23a79177…d24`，先冻结后实现，复验一致）。judge 两模式：SOURCE（vm 驱动真实 `handleRuleFailure`，巴黎/东京/空白/点 q/乱序头 → 完整有序数组、首项=locale、无 ;q=；空/空段/段内空格/尾逗号/多余参数/非字符串 → unreadable 且 override 不变）+ RUNTIME（retained 会话页面 langs==实际服务端头完整列表、marker=0）。
+- **红→绿**：current（预修复工作区，`src-current-prefix/` SHA bffee8b3…）**红 28 fail**（`['fr-FR']` 单项 + 异常头谎称 retained）；production HEAD（`src-current-sha/`，无 handleRuleFailure）红（基线）；**candidate 绿 exit 0**（11 case 全过）。
+- **实现**：`background.js` 新增纯解析 helper `alLanguageList()`（完整有序 tag 列表、去 ;q=、仅接受项目自身形状，非法→null）；retained 分支 `locale=tags[0]`、`languages=tags`（不再 `[first]`），解析不到有效 tag → 保持上一提交态 + 显式 unreadable（不谎称 retained）。
+- **测试**：`test/run-tests.js` 支持 async 用例 + vm 沙箱执行真实 background.js（跨 realm 归一化断言）+ 4 条新行为测试（完整数组/异常输入/retained 提交/unreadable 保持）→ **89 tests passed, 0 skipped**（85+4）。
+- **current 生产 SHA 运行时（`src-current-sha/`=HEAD 1.2.3 源码，未提交候选之外）**：full matrix 1 轮（`lang-run-current/`）ok_all=True——off/sessionA/sessionB 页面 langs==实际头完整有序（5+1+1 probe 全一致、marker=0）；failure 会话如实复现已知 pre-fix 签名（页面 ja-JP 完整数组 vs 真实原生头 zh-CN，1/3 probe 不一致，judge-failure 对 current 标红的同一行为）。retained 1 轮（`lang-run-current-retained/`）ok_all=True——补充 judge runtime 模式绿（retained sessions=1、页面==头、marker=0），source 模式红（HEAD 无 handleRuleFailure，基线）。harness 缺口：首次复制漏 `probe.html`（server 404 无 probe 行）已补齐，失败轮归档 `lang-run-failed-missing-probe-html/`。
+- 运行中：candidate full matrix 3 轮（`--only off,sessionA,sessionB,failure --rounds 3`）→ 后接 retained 3 轮、Chrome/Edge 各 3 轮、篡改反向验证、全量回归。
+
+## 三浏览器运行时回归 — 完成（2026-08-13 18:45）
+
+- **candidate full matrix 3 轮**（`lang-run-candidate/`，加锁 server 副本修复 acl 并发丢行；flake 轮归档 `lang-run-candidate-flake-acl-drop/`，access.log 证明 font 请求 200 到达而 acl 行丢失）：**judge-normal PASS**、**judge-failure PASS**（exit 0）；一致性核查 12 会话 0 不一致、marker 全 0。
+- **candidate retained 3 轮**（`lang-run-candidate-retained/`）：**judge-retain PASS**；**judge-languages 全绿**——SOURCE 11 case（巴黎/东京/空白/点 q/乱序 → 完整有序数组、locale=首项、无 ;q=；6 类异常 → unreadable 且 override 不变）+ RUNTIME 3 retained 会话（页面 langs==实际服务端头完整同序、首项=locale、marker=0）。
+- **篡改反向验证**（candidate retained raw 派生，仅改 probe langs）：缺项/乱序/含 `;q=` 三类各 **红 9 fail**；未篡改绿。judge 非空转。
+- **current 生产 SHA**：full matrix 1 轮 + retained 1 轮（`lang-run-current/`、`lang-run-current-retained/`）ok_all=True——off/sessionA/sessionB 与 retained 页面 langs 完整、marker=0（补充 judge runtime 绿）；failure 会话如实复现已知 pre-fix 签名（页面 ja-JP vs 真实原生头 zh-CN）；source 模式红（HEAD 无 handler / pre-fix `['fr-FR']` 28 fail）。
+- **Chrome 3 轮**（`regress-run-chrome/`）：judge-chromium **PASS**；**Edge 3 轮**（`regress-run-edge/`）：judge-chromium **PASS**——ping 路径无回归。
+- **全量静态回归**：89 tests / smoke / 13 syntax（含 install-guard.mjs）/ build 17 / lint 0-0-0 / `git diff --check` clean / XPI SHA `24162a2e…4444c55` 不变；冻结 judge SHA 复验一致（normal b20b4149 / failure e67901d8 / retain 6b286b56 / chromium 623d2f0b；补充 judge efad4670 + loader 23a79177）。端口 18945-18958/18965-18967/8891 全空、浏览器进程残留=0。未 commit/push/merge/tag/签名/安装。
 
 ## Verification entry point
 

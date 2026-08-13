@@ -176,8 +176,10 @@ web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi
 ```
 
 The signed `1.2.3` package contains the accepted Firefox source from `main`.
-GitHub source updates still do not update an installed XPI; future source
-changes require another version bump, signature, and installation.
+The repository currently prepares `1.2.4` candidate source; it is not the
+signed package above. GitHub source updates still do not update an installed
+XPI. Version `1.2.4` requires a new Mozilla signature and separate installation
+before it replaces the signed `1.2.3` release.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 
