@@ -46,6 +46,9 @@ jobs:
           node --check lib/locale.js
           node --check lib/timezone.js
           node --check lib/font-mask.js
+          node --check tools/build-firefox.mjs
+          node --check tools/serve-firefox-verify.mjs
+          node --check tools/install-guard.mjs
           if [ -f content-isolated.js ]; then node --check content-isolated.js; fi
           if [ -f lib/font-mask-isolated.js ]; then node --check lib/font-mask-isolated.js; fi
 

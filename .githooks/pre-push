@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# GeoMirror main-push guard (versioned pre-push hook, repo-local via
+# `git config --local core.hooksPath .githooks` — see tools/install-guard.mjs).
+#
+# Purpose: accidental-push guard only. GitHub branch protection / rulesets
+# are unavailable on this private-repo plan (both APIs return HTTP 403), so
+# this hook is a documented operating rule, NOT a server-side boundary.
+# Every writer with push access can bypass it locally:
+#   - `git push --no-verify`
+#   - a fresh clone without the guard installed
+#   - deleting `.githooks/pre-push` / unsetting core.hooksPath
+#   - GitHub web edits
+# See docs/FIREFOX_BUGFIX_HANDOFF.md (maintenance workflow) for the honest
+# bypass list.
+#
+# Escape hatch (documented emergency authorization):
+#   GEOMIRROR_EMERGENCY_MAIN_PUSH=1 git push origin main
+# Nothing else bypasses the guard.
+
+if [ "$GEOMIRROR_EMERGENCY_MAIN_PUSH" = "1" ]; then
+  exit 0
+fi
+
+# stdin: <local ref> <local oid> <remote ref> <remote oid> per pushed ref
+rejected=0
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [ -z "$remote_ref" ] && continue
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "GEOMIRROR-GUARD: direct push to $remote_ref is blocked." >&2
+    echo "GEOMIRROR-GUARD: use a short-lived feature branch + pull request (Firefox CI gate)." >&2
+    echo "GEOMIRROR-GUARD: documented emergency path: GEOMIRROR_EMERGENCY_MAIN_PUSH=1 git push ..." >&2
+    rejected=1
+  fi
+done
+
+[ "$rejected" -eq 1 ] && exit 1
+exit 0
