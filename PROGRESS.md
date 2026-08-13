@@ -2,10 +2,10 @@
 
 ## Firefox 1.2.4 candidate closeout — 2026-08-13
 
-- `maint/firefox-next-maintenance` now carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation as version `1.2.4` candidate source.
+- Version `1.2.4` candidate source carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation.
 - Both source manifests are `1.2.4`; the only formally signed package remains Firefox `1.2.3` (`24162a2e…4444c55`) until the candidate is merged, signed under a separate release step, and installed.
 - Repository-local `core.hooksPath=.githooks` is installed in this clone. The guard blocks accidental direct `main` pushes but remains bypassable and is not server-side branch protection.
-- Next gate: commit the reviewed candidate, push only the maintenance branch to `my-private`, open a PR to `main`, and require Firefox CI before merge. No signed artifact may be called `1.2.4` until Mozilla actually returns it.
+- Source integration must use a short-lived branch, a PR to `main`, and green Firefox CI. After integration, Mozilla signing and permanent installation remain separate release gates. No signed artifact may be called `1.2.4` until Mozilla actually returns it.
 
 ## Formal Firefox baseline — 2026-08-13
 

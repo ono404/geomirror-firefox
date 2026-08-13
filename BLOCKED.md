@@ -7,7 +7,7 @@
 ## Release state
 
 - Source manifests are now `1.2.4` candidate source. The currently signed Firefox release remains `1.2.3` with SHA-256 `24162a2e7c313aeb0a7d8d1580b7465f6b1d7e90e335de614d31ff30b4444c55`.
-- `1.2.4` is not yet merged, Mozilla-signed, permanently installed, or live-verified. Those states must be recorded separately; source version alone is not a release.
+- Merge, Mozilla signature, permanent installation, and live verification are separate states and must be checked independently; source version alone is not a release. Until the new signed package is produced and verified, formal Firefox release status remains `1.2.3`.
 
 ## Governance limitation
 

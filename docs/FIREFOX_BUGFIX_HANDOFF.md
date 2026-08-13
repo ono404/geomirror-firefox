@@ -3,7 +3,7 @@
 ## Current source state — 2026-08-13
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
-- The maintenance branch prepares source version `1.2.4` with the accepted DNR failure/coherence fix and local main-push mitigation. Until its PR is merged and a new XPI is signed, this is candidate source rather than a formal release.
+- Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. Until Mozilla returns a newly signed XPI and that package is separately installed and verified, it remains candidate source rather than a formal release.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
