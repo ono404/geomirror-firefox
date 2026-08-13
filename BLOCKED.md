@@ -11,7 +11,6 @@
 
 ## Deliberately pending external actions
 
-- The current `main` source is not a newly signed Firefox release.
-- The existing signed `1.2.2` XPI predates the accepted source fixes; replacing a permanent installation requires a separately authorized version bump, Mozilla signing, and installation.
+- Signed Firefox release `1.2.3` exists and contains the accepted source. Installation into the permanent Firefox profile remains pending explicit action-time confirmation.
 
 These are release-state boundaries, not product defects. A source-branch push does not imply merge, signing, or publication.
