@@ -1,11 +1,12 @@
 # GeoMirror Firefox current status
 
-## Firefox 1.2.4 candidate closeout — 2026-08-13
+## Firefox 1.2.4 formal release closeout — 2026-08-14
 
-- Version `1.2.4` candidate source carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation.
-- Both source manifests are `1.2.4`; the only formally signed package remains Firefox `1.2.3` (`24162a2e…4444c55`) until the candidate is merged, signed under a separate release step, and installed.
+- Version `1.2.4` carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation. PR #4 merged the candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; PR and merged-main Firefox CI passed.
+- Mozilla signed the unlisted package `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi` on 2026-08-14. SHA-256: `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
+- Permanent-profile verification found version `1.2.4` active, enabled, compatible, `signedState=2`, with the installed XPI byte-identical to the canonical artifact. Firefox `1.2.4` is therefore the formal release; `1.2.3` is retained only as a historical artifact.
 - Repository-local `core.hooksPath=.githooks` is installed in this clone. The guard blocks accidental direct `main` pushes but remains bypassable and is not server-side branch protection.
-- Source integration must use a short-lived branch, a PR to `main`, and green Firefox CI. After integration, Mozilla signing and permanent installation remain separate release gates. No signed artifact may be called `1.2.4` until Mozilla actually returns it.
+- Future source integration must continue to use a short-lived branch, a PR to `main`, and green Firefox CI. Source, merge, Mozilla signing, and installation remain separate release gates.
 
 ## Formal Firefox baseline — 2026-08-13
 

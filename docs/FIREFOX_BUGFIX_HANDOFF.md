@@ -1,9 +1,9 @@
 # Firefox maintenance and release handoff
 
-## Current source state — 2026-08-13
+## Current source state — 2026-08-14
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
-- Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. Until Mozilla returns a newly signed XPI and that package is separately installed and verified, it remains candidate source rather than a formal release.
+- Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. PR #4 merged the maintenance candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; its pull-request and merged-main Firefox CI runs passed.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
@@ -15,11 +15,12 @@
 
 ## Signed-package state
 
-- Both source manifests declare candidate version `1.2.4`.
-- Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi`.
-- Signed package SHA-256: `24162a2e7c313aeb0a7d8d1580b7465f6b1d7e90e335de614d31ff30b4444c55`.
-- Mozilla accepted and signed this unlisted XPI on 2026-08-13. Its package contains the Firefox isolated runtime accepted on `main`; permanent-profile installation is tracked separately from signing.
-- Historical `1.1.0`, `1.2.1`, and `1.2.2` XPI files remain audit artifacts. GitHub source changes do not update an installed add-on; candidate `1.2.4` requires a new Mozilla signature and separate installation before it becomes the permanent Firefox release.
+- Both source manifests declare formal version `1.2.4`.
+- Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`.
+- Signed package SHA-256: `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
+- Mozilla accepted and signed this unlisted XPI on 2026-08-14. Its manifest is `1.2.4`, Mozilla signature files are present, and its non-signature payload matches the accepted Firefox build (manifest JSON is semantically equal and packaged README text is equal after newline normalization; all other payload files are byte-identical).
+- Permanent-profile verification on 2026-08-14 found version `1.2.4` active, enabled, application-compatible, and Mozilla-signed (`signedState=2`); the installed XPI hash exactly matched the canonical artifact above.
+- Historical `1.1.0`, `1.2.1`, `1.2.2`, and `1.2.3` XPI files remain audit artifacts. GitHub source changes do not update an installed add-on automatically.
 
 ## Maintenance workflow
 
