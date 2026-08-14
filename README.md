@@ -172,14 +172,13 @@ Note: temporary add-ons disappear when Firefox restarts. This is the recommended
 A signed unlisted Firefox package can be installed permanently:
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.3.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi
 ```
 
-The signed `1.2.3` package contains the accepted Firefox source from `main`.
-The repository currently prepares `1.2.4` candidate source; it is not the
-signed package above. GitHub source updates still do not update an installed
-XPI. Version `1.2.4` requires a new Mozilla signature and separate installation
-before it replaces the signed `1.2.3` release.
+The signed `1.2.4` package contains the accepted Firefox source from `main`,
+including the `Accept-Language` failure/coherence fix. It was signed through
+Mozilla's unlisted channel and verified in a permanent Firefox profile.
+GitHub source updates still do not update an installed XPI automatically.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 

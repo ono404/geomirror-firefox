@@ -6,8 +6,8 @@
 
 ## Release state
 
-- Source manifests are now `1.2.4` candidate source. The currently signed Firefox release remains `1.2.3` with SHA-256 `24162a2e7c313aeb0a7d8d1580b7465f6b1d7e90e335de614d31ff30b4444c55`.
-- Merge, Mozilla signature, permanent installation, and live verification are separate states and must be checked independently; source version alone is not a release. Until the new signed package is produced and verified, formal Firefox release status remains `1.2.3`.
+- Firefox `1.2.4` is the formal signed release. The canonical XPI is `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`, SHA-256 `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
+- The package was Mozilla-signed through the unlisted channel and independently verified in the permanent Firefox profile on 2026-08-14: version `1.2.4`, active/enabled/compatible, `signedState=2`, and installed-XPI hash equal to the canonical artifact. Source, merge, signature, and installation remain separate states for future releases.
 
 ## Governance limitation
 
@@ -47,7 +47,7 @@
   absent) are implemented per the task book and pinned by static tests + the
   constructible runtime contract above.
 
-- Signed Firefox release `1.2.3` exists and contains the accepted source. Installation into the permanent Firefox profile remains pending explicit action-time confirmation.
+- The previously pending permanent-profile installation is closed by the verified Firefox `1.2.4` installation above. Firefox `1.2.3` remains only as a historical signed artifact.
 
 ## Round-specific finding — retained languages blind spot CLOSED (2026-08-13, 18:45)
 
