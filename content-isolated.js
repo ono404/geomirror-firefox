@@ -32,11 +32,33 @@
 (function () {
   'use strict';
   const rawWin = window.wrappedJSObject;
-  // Build page-realm functions via the page's own Function constructor.
-  // Must NOT pass content-side objects (e.g. an args array via .apply): the
-  // page-side function reading a content array's .length is Xray-denied.
-  // Spread-call with primitive string args only.
-  const makePageFn = (...args) => rawWin.Function(...args);
+  // Pristine page-realm callables, captured ONCE at document_start BEFORE any
+  // page script can replace them (T1-callable-trust fix). All call-time
+  // construction must go through these captured references: a page that
+  // swaps window.Function / window.Promise / window.EventTarget after load
+  // must never be able to observe or intercept extension-triggered
+  // construction. (Proven crossing before the fix: the page-realm timezone
+  // helper received the captured real Intl.DateTimeFormat through a
+  // page-controlled Function and derived the real host timezone/locale —
+  // evidence `../evidence/firefox-security-1.2.5/T1-callable-trust/`.)
+  const pageFnCtor = rawWin.Function;
+  const pagePromiseCtor = rawWin.Promise;
+  const pageEventTargetCtor = rawWin.EventTarget;
+  // T2A fix: the pristine resolve MEMBER, captured at document_start. The
+  // constructor reference alone is not enough — `pagePromiseCtor.resolve`
+  // is a member lookup at call time on the page's own Promise object, so a
+  // page replacing Promise.resolve AFTER load intercepts the extension's
+  // permission-query resolution and controls its return value (proven with
+  // a marker-mode probe, evidence `../evidence/firefox-security-1.2.5/
+  // independent-acceptance-v2/T2A-promise-member-v2/`). The captured member
+  // is invoked with the captured constructor as `this` (Promise.resolve
+  // requires a constructor receiver).
+  const pagePromiseResolve = rawWin.Promise.resolve;
+  // Build page-realm functions via the page's own Function constructor,
+  // captured pristine. Must NOT pass content-side objects (e.g. an args
+  // array via .apply): the page-side function reading a content array's
+  // .length is Xray-denied. Spread-call with primitive string args only.
+  const makePageFn = (...args) => pageFnCtor(...args);
 
   // ------------------------------------------------------------------ state --
   const BOOTSTRAP_PROFILE = {
@@ -123,6 +145,34 @@
       }
     });
   });
+  // T2-cross-realm: profile delivery fallback for SUBFRAMES. Measured on
+  // Firefox 153: chrome.storage in subframe content scripts fails with
+  // "An unexpected error occurred" — the initial get AND storage.onChanged
+  // are both dead there, leaving subframe wrappers stuck on the neutral
+  // bootstrap (top=Asia/Tokyo vs same-origin http subframe=UTC — a stable
+  // cross-realm contradiction, evidence T2-cross-realm/). The
+  // content-script -> background runtime channel works in every frame
+  // (measured), and the background's existing onMessage handler answers
+  // any message with the fresh {state, override, settings} snapshot, so
+  // the profile is also requested over that channel; updates are pushed
+  // over it by the background. No page-visible surface is created: the
+  // page (MAIN world) can neither send nor receive these messages.
+  const profileViaMessage = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'geomirror-profile' }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (resp && resp.override) loadFromStorage(resp);
+      });
+    } catch (_) {}
+  };
+  profileViaMessage();
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'geomirror-profile-update' && msg.data) {
+        loadFromStorage(msg.data);
+      }
+    });
+  } catch (_) {}
   // Safety net: never keep queued geolocation callbacks or permission
   // queries hanging forever.
   setTimeout(flushWaitersAfterTimeout, 12000);
@@ -402,6 +452,14 @@
     const ctor = makePageFn('impl', 'realProto', 'realCtor',
       'const fn = function DateTimeFormat() { return impl.apply(this, arguments); };' +
       'fn.prototype = realProto;' +
+      // Constructor closure (T1-callable-trust fix): the REAL prototype's
+      // `constructor` slot must point at the LIVE surface (the wrapper),
+      // exactly as the extension-off baseline has prototype.constructor ===
+      // Intl.DateTimeFormat. Before the fix the slot still pointed at the
+      // captured REAL constructor, so the page recovered the real
+      // Intl.DateTimeFormat via `Intl.DateTimeFormat.prototype.constructor`
+      // and read the real host timezone/locale from it (proven).
+      'try { Object.defineProperty(realProto, "constructor", { value: fn, writable: true, enumerable: false, configurable: true }); } catch (e) {}' +
       'fn.supportedLocalesOf = function () { return realCtor.supportedLocalesOf.apply(realCtor, arguments); };' +
       'return fn;')(impl, realDTF.prototype, realDTF);
     installValueSlot(rawWin.Intl, 'DateTimeFormat', ctor, origIntlDescs.DateTimeFormat);
@@ -422,6 +480,7 @@
     const ctor = makePageFn('impl', 'realProto', 'realCtor',
       `const fn = function ${name}() { return impl.apply(this, arguments); };` +
       'fn.prototype = realProto;' +
+      'try { Object.defineProperty(realProto, "constructor", { value: fn, writable: true, enumerable: false, configurable: true }); } catch (e) {}' +
       'if (realCtor.supportedLocalesOf) fn.supportedLocalesOf = function () { return realCtor.supportedLocalesOf.apply(realCtor, arguments); };' +
       'return fn;')(impl, realCtor.prototype, realCtor);
     installValueSlot(rawWin.Intl, name, ctor, desc);
@@ -772,7 +831,7 @@
     : null;
 
   function buildPermissionStatus() {
-    if (!permProto || typeof rawWin.EventTarget !== 'function') {
+    if (!permProto || typeof pageEventTargetCtor !== 'function') {
       return makePageFn(
         'const o = { state: "granted", onchange: null };' +
         'try { Object.defineProperty(o, Symbol.toStringTag, { value: "PermissionStatus" }); } catch (e) {}' +
@@ -789,7 +848,7 @@
       'var s = new EventTargetCtor();' +
       'Object.setPrototypeOf(s, proto);' +
       'return s;'
-    )(permProto, rawWin.EventTarget);
+    )(permProto, pageEventTargetCtor);
     const key = permStatusKey(s);
     if (!key) {
       // Cannot table-register this instance: explicitly fall back to the
@@ -838,7 +897,7 @@
           // safety timeout flushes) — never via an immediate microtask.
           return new window.Promise((resolve) => { permQueryers.push({ resolve }); });
         }
-        if (geoActive()) return rawWin.Promise.resolve(buildPermissionStatus());
+        if (geoActive()) return pagePromiseResolve.call(pagePromiseCtor, buildPermissionStatus());
         return nativeQueryTramp(JSON.stringify({ name: 'geolocation' }));
       }
       if (desc === undefined) return nativeQueryNoArgs();

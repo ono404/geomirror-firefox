@@ -229,6 +229,10 @@ web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi
 
 已签名的 `1.2.4` 包包含 `main` 上已验收的 Firefox 源码以及 `Accept-Language` 失败/一致性修复。该包已通过 Mozilla unlisted 渠道签名，并在长期 Firefox profile 中完成安装核验。GitHub 源码更新仍不会自动更新已安装 XPI。
 
+仓库源码当前为**本地版本 `1.2.5`**（page-realm callable 信任边界 + 捕获的 `Promise.resolve` 成员修复 + 跨 realm 一致性修复）。该版本只是本地源码状态——尚未签名、未发布；最后已签名/已安装的版本仍是 `1.2.4`。构建→签名→安装属于另行授权的发布流程。
+
+本地 `1.2.5` 源码的验收状态（2026-08-16，全文见 `../evidence/firefox-security-1.2.5/final-governance-closeout/`）：产品修复行为 **ACCEPT**（两次独立 fresh Firefox 运行对照冻结 judge 全绿）；证据目录**不能密码学自证历史**（攻击验收 REJECT：完整自洽伪造可通过目录内 judge——judge 只验证内部一致性；独立管理锚建立后的改动可检测，锚前历史不可追溯）；在上述明示信任模型下运营发布准备度 **ACCEPT**。下一步是发布流程：短期分支 → commit → PR/CI → 授权合并 → Mozilla 签名 → 永久安装核验。
+
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
 
 后续如果修 bug，需要分清两件事：

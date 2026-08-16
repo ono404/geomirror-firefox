@@ -1,21 +1,35 @@
 # Firefox maintenance and release handoff
 
-## Current source state — 2026-08-14
+## Current source state — 2026-08-16 (local 1.2.5, NOT signed)
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
+- **Source version `1.2.5` (LOCAL only — not signed, not published, not installed)** carries
+  three accepted fix sets: the page-realm callable trust boundary (T1), the cross-realm
+  consistency fixes (T2), and the captured-`Promise.resolve`-member fix (T2A, closes the
+  call-time member-lookup crossing left by the T1 constructor capture), each proven
+  RED→GREEN→RED on frozen real-Firefox judges (evidence `../evidence/firefox-security-1.2.5/`).
+  The last signed/installed version remains `1.2.4`.
+- **Final acceptance state (2026-08-16, `final-governance-closeout/`)**: PRODUCT ACCEPT;
+  EVIDENCE CRYPTOGRAPHIC AUTHENTICITY REJECT (the v3 judges verify in-directory internal
+  consistency only — the attack review showed complete self-consistent forgeries pass them;
+  the independent manager anchor detects post-anchor changes but cannot prove pre-anchor
+  history); OPERATIONAL RELEASE READINESS ACCEPT under the stated operational trust model
+  (`SECURITY_MODEL.md`). The earlier v2 "EVIDENCE ACCEPT" was revoked by the v3 report.
+  Next step: short-lived branch → commit → PR/CI → authorized merge → Mozilla signing →
+  permanent-install verification. Each release step is a separate authorization.
 - Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. PR #4 merged the maintenance candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; its pull-request and merged-main Firefox CI runs passed.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
 - `.github/workflows/firefox-ci.yml` runs on pull requests and pushes to `main`; the PR head and merged `main` both passed the Firefox source checks.
 - Firefox 153.0.4 independent acceptance: `ACCEPT` with 79 tests, build/lint, extension-off/on controls, Paris/Tokyo regional matrices, and server-observed `Accept-Language` coverage.
-- Firefox architecture: one ISOLATED content runtime (`content-isolated.js` + `lib/font-mask-isolated.js`), with no page-visible DOM bridge.
-- Accepted limitations: generic JavaScript wrapper source/stack differences and Geolocation `structuredClone` WebIDL internal-slot behavior.
+- Firefox architecture: one ISOLATED content runtime (`content-isolated.js` + `lib/font-mask-isolated.js`), with no page-visible DOM bridge. `1.2.5` adds `match_about_blank` + `match_origin_as_fallback` to the Firefox content script and a content-script → background runtime profile channel (subframe `chrome.storage` is dead on Firefox 153 — measured; see BLOCKED.md).
+- Accepted limitations: generic JavaScript wrapper source/stack differences, Geolocation `structuredClone` WebIDL internal-slot behavior, and the T2 platform limitations (workers and top-level `data:` documents cannot carry content scripts — classified C, recorded in the frozen matrix judge).
 - In this maintenance workspace, historical raw evidence lives outside the Git repository under `../evidence/`; it is not part of a GitHub clone.
 
 ## Signed-package state
 
-- Both source manifests declare formal version `1.2.4`.
+- Both source manifests declare formal version `1.2.5` (LOCAL source state; the signed manifest is `1.2.4`).
 - Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`.
 - Signed package SHA-256: `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
 - Mozilla accepted and signed this unlisted XPI on 2026-08-14. Its manifest is `1.2.4`, Mozilla signature files are present, and its non-signature payload matches the accepted Firefox build (manifest JSON is semantically equal and packaged README text is equal after newline normalization; all other payload files are byte-identical).

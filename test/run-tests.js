@@ -626,6 +626,19 @@ test('STRUCTURAL: the pending geolocation permission promise never settles via a
     'pending permission must create a page-realm promise (via the Xray window) whose executor queues the resolver');
 });
 
+test('STRUCTURAL: the permission-query resolution uses the CAPTURED pristine Promise.resolve member, never a call-time member lookup', () => {
+  const src = readFile('content-isolated.js');
+  // T2A fix: pagePromiseCtor.resolve would resolve through the page's own
+  // member at call time (page-replaceable); the resolve FUNCTION is captured
+  // at document_start and invoked with the captured constructor as `this`.
+  assert(/const pagePromiseResolve = rawWin\.Promise\.resolve;/.test(src),
+    'the pristine Promise.resolve member must be captured at document_start');
+  assert(/pagePromiseResolve\.call\(pagePromiseCtor, buildPermissionStatus\(\)\)/.test(src),
+    'the ready permission path must resolve through the captured member with the captured constructor as receiver');
+  assert(!/pagePromiseCtor\.resolve\(buildPermissionStatus\(\)\)/.test(src),
+    'no call-time member lookup may resolve the permission query');
+});
+
 test('STRUCTURAL: non-geolocation permissions keep the native delegation path', () => {
   const src = readFile('content-isolated.js');
   assert(/nativeQueryTramp\(json\)/.test(src), 'non-geolocation descriptors must delegate via the native trampoline');
@@ -863,7 +876,10 @@ function loadBackgroundSandbox() {
       onMessage: { addListener() {} },
     },
     alarms: { onAlarm: { addListener() {} } },
-    storage: { local: { get: async () => ({}), set: async () => {} } },
+    storage: {
+      local: { get: async () => ({}), set: async () => {} },
+      onChanged: { addListener() {} },
+    },
     declarativeNetRequest: {
       updateDynamicRules: async () => {},
       getDynamicRules: async () => [],

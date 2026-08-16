@@ -180,6 +180,24 @@ including the `Accept-Language` failure/coherence fix. It was signed through
 Mozilla's unlisted channel and verified in a permanent Firefox profile.
 GitHub source updates still do not update an installed XPI automatically.
 
+The repository source is currently at **local version `1.2.5`** (page-realm
+callable trust boundary + captured-`Promise.resolve`-member fix + cross-realm
+consistency fixes). That version is a LOCAL source state only — it has not
+been signed or published; the last signed/installed version remains `1.2.4`.
+A release cycle (build, sign, install) is a separate, explicitly authorized
+step.
+
+Acceptance state of the local `1.2.5` source (2026-08-16, full text under
+`../evidence/firefox-security-1.2.5/final-governance-closeout/`): the product
+fixes are ACCEPTED (two independent fresh-Firefox runs against frozen judges);
+the evidence directories are NOT cryptographically self-proving (attack review
+REJECT: complete self-consistent forgeries pass the in-directory judges, which
+verify internal consistency only — tampering after the independent manager
+anchor is detectable, history before it is not); operational release readiness
+is ACCEPTED under that stated trust model. The next step is the release
+process: short-lived branch → commit → PR/CI → authorized merge → Mozilla
+signing → permanent-install verification.
+
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 
 Future bug fixes have two layers:
