@@ -10,7 +10,7 @@
   - **PRODUCT: ACCEPT** — the 1.2.5 fixes behave per frozen semantics, confirmed by two independent fresh-Firefox runs (original v3 run + manager-review-v3-ai2 rerun), 90 tests/0 skipped, build 17, lint 0/0/0.
   - **EVIDENCE CRYPTOGRAPHIC AUTHENTICITY: REJECT (NOT PROVIDED)** — the attack review proved complete self-consistent forgeries (c07 forged run records; c09b forged authority + decoy repo) are ACCEPTED by all four v3 judges. The v3 judges verify internal consistency only; they cannot certify historical truth. The ATTACK REVIEW REJECT is retained and must not be reworded as a pass.
   - **OPERATIONAL RELEASE READINESS: ACCEPT** — under the operational trust model (trusted independent executor/manager + manager anchor detects post-anchor changes; the anchor cannot prove pre-anchor history).
-- Conclusion: the fix phase may close and the release process may begin (short-lived branch → commit → PR/CI → authorized merge → Mozilla signing → permanent-install verification). 1.2.5 remains LOCAL unpublished source; the last formal release is still 1.2.4.
+- Conclusion: the fix phase is closed and release integration has begun. Source commit `7c97f22` is on branch `agent/release-firefox-1.2.5` in PR #6, whose Firefox CI passed. It is not yet merged, Mozilla-signed, published, or permanently installed; the last formal release is still 1.2.4.
 - The old "v2 EVIDENCE ACCEPT" below is historical: the v2 evidence-chain ACCEPT was REVOKED by the v3 report (2026-08-15, conditional-isdir bypass demonstrated).
 
 ## Independent acceptance v2 (2026-08-14) — HISTORICAL, evidence verdict superseded
@@ -35,7 +35,7 @@
 
 - Firefox `1.2.4` is the last signed release. The canonical XPI is `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`, SHA-256 `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
 - The package was Mozilla-signed through the unlisted channel and independently verified in the permanent Firefox profile on 2026-08-14: version `1.2.4`, active/enabled/compatible, `signedState=2`, and installed-XPI hash equal to the canonical artifact. Source, merge, signature, and installation remain separate states for future releases.
-- **Local source state (2026-08-14): version `1.2.5` in both manifests is the LOCAL source state only — NOT signed, NOT published, NOT installed.** It carries the T1 page-realm callable-trust fixes, the T2 cross-realm fixes, and the T2A captured-`Promise.resolve`-member fix (the member capture closes the call-time member-lookup crossing left by the T1 constructor capture; pending-path constructor is measured not page-interceptable). The signed/installed version remains `1.2.4` until an explicitly authorized release/signing cycle.
+- **Source candidate state:** version `1.2.5` in both manifests is committed on the release branch and under review in PR #6 (Firefox CI passed), but is NOT merged, signed, published, or installed. It carries the T1 page-realm callable-trust fixes, the T2 cross-realm fixes, and the T2A captured-`Promise.resolve`-member fix (the member capture closes the call-time member-lookup crossing left by the T1 constructor capture; pending-path constructor is measured not page-interceptable). The signed/installed version remains `1.2.4` until an explicitly authorized merge and release/signing cycle.
 
 ## Platform limitations (T2-cross-realm, measured 2026-08-14, Firefox 153.0.4)
 

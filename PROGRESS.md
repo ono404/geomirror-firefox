@@ -3,7 +3,7 @@
 ## 最终治理收口（2026-08-16，final-governance-closeout，当前有效口径）
 
 - **三轴裁决**：PRODUCT **ACCEPT**（修复行为真实有效）；EVIDENCE CRYPTOGRAPHIC AUTHENTICITY **REJECT**（证据目录不能密码学自证历史）；OPERATIONAL RELEASE READINESS **ACCEPT**（可信独立执行者 + 管理锚防锚后改动的运营模型下）。
-- **结论语：修复阶段可结束，允许进入发布流程**（短期分支 → commit → PR/CI → 授权合并 → Mozilla 签名 → 永久安装核验）。1.2.5 仍是本地未发布源码：未 commit/未合并/未签名/未安装，最后正式版仍是 1.2.4。
+- **当前发布状态**：修复阶段已结束，1.2.5 源码提交 `7c97f22` 已推送到 `agent/release-firefox-1.2.5` 并进入 PR #6，Firefox CI 已通过。尚未授权合并、Mozilla 签名、发布或永久安装；最后正式版仍是 1.2.4。
 - 完整模型与裁决：`../evidence/firefox-security-1.2.5/final-governance-closeout/SECURITY_MODEL.md` 与 `FINAL_REPORT.md`；最终锚 `FINAL_ANCHOR.json`。
 - 历史口径修正：下文 2026-08-14 的"v2 PRODUCT ACCEPT + EVIDENCE ACCEPT"中，**EVIDENCE ACCEPT 已撤销**（v3 报告 2026-08-15 实测 v2 链可旁路）；PRODUCT ACCEPT 经两次独立 fresh 运行复核维持。
 - v3 证据链边界：judge 只能验证目录内部一致性（52 项部分伪造全 RED），不能认证历史真实性——完整自洽伪造（c07/c09b）被四 judge 接受，攻击验收 **REJECT**（保留，不改称通过）。非攻击检查 **ACCEPT**（manager-review-v3-ai2，四任务各3轮 fresh Firefox 全 PASS）。

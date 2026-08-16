@@ -26,10 +26,11 @@ evidence chain cannot prove its own history to a distrusting verifier (the v3
 judges check internal consistency only; complete self-consistent forgeries
 were accepted in the attack review; the independent manager anchor detects
 changes made after it was established, nothing before); OPERATIONAL RELEASE
-READINESS ACCEPT under the stated operational trust model. `1.2.5` remains
-local unpublished source; the last formal release is `1.2.4`. The next step
-is the release process: short-lived branch → commit → PR/CI → authorized
-merge → Mozilla signing → permanent-install verification.
+READINESS ACCEPT under the stated operational trust model. The `1.2.5` source
+candidate is commit `7c97f22` in PR #6, whose Firefox CI passed; it is not yet
+merged, signed, published, or installed. The last formal release is `1.2.4`.
+The remaining release steps are authorized merge → Mozilla signing →
+permanent-install verification.
 
 ## Runtime flow
 
