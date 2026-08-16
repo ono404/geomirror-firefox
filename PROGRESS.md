@@ -46,6 +46,15 @@
 - **harness 限制（已记录，非产品问题）**：temporary addon 无 background，跨 document storage.onChanged 广播未验证（self-set 同一文档触发正常）；子 frame profile 传递依赖 background runtime 消息（T2-cross-realm 已有独立证据），本 harness 不覆盖；权限 pending 路径 = T2A 既有原始证据，未重做。
 - 证据：`../evidence/firefox-security-1.2.5/final-callable-closure/{rounds/r1..r10,bisect-run,hostile-run,matrix-run}/` + `diag-ext/prod/`（旧版 299b87d2 与修复版 80bc3757 副本）。
 
+## 交付完成（2026-08-16 22:0x）：本地验收全绿 + GitHub 最后一步
+
+- 最终静态验收（生产工作区）：**91 tests passed/0 skipped**、smoke PASS、全部 node --check PASS、build 17、lint 0/0/0、git diff --check PASS。
+- 白名单 diff：仅 content-isolated.js、test/run-tests.js（新增 1 条 + 加强 1 条）、PROGRESS.md、BLOCKED.md、docs/TECHNICAL.md、docs/FIREFOX_BUGFIX_HANDOFF.md 6 文件；无其他改动。
+- 本地 commit `5dd21e2`（T-FINAL），push my-private `agent/release-firefox-1.2.5`（515c21a..5dd21e2）成功。
+- PR #6 只读确认：head=5dd21e2、base=main、OPEN、MERGEABLE、Firefox CI COMPLETED/SUCCESS。未 merge、未签名、未发布、未安装（main/签名/发布/安装改动数 0）。
+- BLOCKED.md 随交付提交：无产品阻塞，harness 限制已记录。
+- 修复—验收循环：1 轮闭环（未到 3 轮上限）。
+
 
 ## 最终治理收口（2026-08-16，final-governance-closeout，当前有效口径）
 
