@@ -115,6 +115,30 @@ measured NOT page-interceptable on Firefox 153: the Xray `window.Promise`
 resolves to the page intrinsic, and a page-replaced constructor is never
 invoked (negative evidence in the same round set).
 
+#### Wrapper call-time lookup closure (1.2.5 T-FINAL, `final-callable-closure`)
+
+Page-realm wrapper bodies (functions built by `makePageFn`) must never resolve
+`.call` / `.apply` / `JSON.parse` / `Reflect.apply` through member or global
+lookup at call time. A page that replaces `Function.prototype.call/apply` or
+`window.JSON.parse` after load intercepts those lookups and controls the
+wrapper's return value — measured on real Firefox 153.0.4 with a hostile page:
+`navigator.language`/`navigator.languages` returned `undefined`,
+`Intl.DateTimeFormat.supportedLocalesOf` returned `undefined`, and
+`new Intl.DateTimeFormat()` constructed an instance whose methods all threw
+`TypeError` (evidence `../evidence/firefox-security-1.2.5/
+final-callable-closure/`, Q2/Q3 + hostile matrix). Two pristine callables are
+captured once at `document_start` and passed into wrapper closures as plain
+parameters: `pageJSONParse` (the pristine page-realm `JSON.parse`, invoked
+directly) and `pageInvoke` — an exported isolated-side helper
+`(fn, self, args) => Reflect.apply(fn, self, args)` that performs the inner
+invocation with the pristine isolated `Reflect.apply`. Direct call, no member
+lookup, no page-global lookup: the page can neither observe nor divert the
+wrapper's inner call. The `supportedLocalesOf` members are likewise captured
+at `document_start` (`realDTF.supportedLocalesOf`, `realNumFmt.supportedLocalesOf`,
+`realCol.supportedLocalesOf`) so the page cannot swap them at call time either.
+Isolated-side (`exportFunction` body) `.call`/`Reflect.apply` usage is
+unaffected: the Xray view protects `.call` there (Q2 evidence).
+
 The provider chain also continues past a valid location-only response until it
 finds a provider with an IANA timezone. If every timezone-capable provider
 fails, the injector retains the neutral bootstrap rather than restoring the

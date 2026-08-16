@@ -1,5 +1,52 @@
 # GeoMirror Firefox current status
 
+## 本轮：1.2.5 最终安全收口核实（final-callable-closure，2026-08-16 开工回执）
+
+- 目标：关闭剩余的 raw-page callable 信任问题——(a) 页面提前 poisoning 后 Xray `window.Function` vs `rawWin.Function` 的真实语义；(b) call-time `.call/.apply/member` lookup 是否可被页面截获；(c) makePageFn wrapper 内 impl/realQuery/JSON.parse/supportedLocalesOf 的 realm 归属；(d) about:blank pre-injection 时序窗口，分别裁决后做最小修复。
+- 顺序：基线核对（已完成，全部相符）→ P0 事实核实（fresh Firefox 最小实验，逐项 VALID/SUPPRESSED/PLATFORM/NOT APPLICABLE）→ 对 VALID 项 RED→GREEN→RED→GREEN 最小修复 → 全量回归 + hostile callable matrix + fresh Firefox 验收 → 白名单 diff 检查 → commit → push my-private → 只读确认 PR #6。
+- 最大风险：把「Xray 不可靠」或「时序窗口可消除」的未证实假设当结论；修复破坏 function name/length/prototype/instanceof/WebIDL parity；未复现却重构稳定代码。全部以实测为准，未复现记 SUPPRESSED。
+- 基线：HEAD 515c21a、content-isolated.js SHA abc74259…c768e、90 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff-check PASS、工作区干净（与任务书任务 0 完全一致）。
+- 证据目录：`../evidence/firefox-security-1.2.5/final-callable-closure/`（唯一新建许可）。
+
+## P0 事实核实完成（2026-08-16 21:3x，r8–r10 fresh Firefox 153.0.4 实测）
+
+- **注入之谜已解**：19:34 唯一成功轮（r1）与全部失败轮（r2–r7）的差异 = manifest `matches/host_permissions` 用 `<all_urls>` 还是 `http://127.0.0.1:19071/*`。Firefox match pattern **不支持端口**：带 `:19071` 的 pattern 不匹配任何页面 → content script 永不注入；`<all_urls>` 注入。r6 起全部轮次 globals/protos/blank ok=True。r5 的「失败」另有原因：残留 server（PID 14268，web-ext run 遗留）劫持 19071，新 server 绑定失败、Firefox 请求写进 webext-run/（其 raw.jsonl 有 cs-arrival 证据）。已清理残留进程。
+- **Q1（页面提前 poisoning 后 Xray vs raw，r9/r10 globals 页）**：
+  - `window.Function/Promise/EventTarget`（Xray 视图）→ 宿主原版：`xrayWrappedIsOrig=true`、`new window.Function('return 123')→123`、Promise/EventTarget 构造成功。页面替换 window.Function 不影响 Xray 视图。
+  - `window.wrappedJSObject.Function/Promise/EventTarget` → 页面 trap：`rawIsTrap=true`、`rawWin.Function('return 456')→not-fn`（trap 返回 undefined）。
+  - `window.Reflect.apply`（Xray 视图）→ **undefined**（调用 TypeError；未 poison 页面同样 undefined——Firefox Xray 对 Reflect.apply 的既有行为）；`rawWin.Reflect.apply` → 页面 trap。
+  - **裁决：Q1 = VALID（raw 视图在页面替换后是 trap）+ PLATFORM（Xray 视图 Reflect.apply 恒 undefined）。生产代码已在 document_start 一次性捕获 pageFnCtor 等（T1 fix），页面无法在捕获前替换（content script 先于页面脚本）→ 捕获路径 SUPPRESSED（无需改）**。
+- **Q2（capturedPageFunction.call 是否被页面 Function.prototype.call 截获，r9/r10 protos 页）**：
+  - isolated world 内 `window.Function.call(...)`（Xray 视图）→ 7、trapped=0 → **不被截获**（Xray 保护 .call 属性）。
+  - isolated world 内 `rawWin.__orig.F.call(...)`（raw 视图捕获的原始构造器）→ **not-fn、trapped=1 → 被截获**。
+  - 直接调用 `rawOrigFn('return 9')` → 9、trapped=0 → 直接调用不经 .call，不被截获。
+  - **裁决：Q2 = VALID（raw 视图函数 .call 被页面 Function.prototype.call 截获）；但生产代码在 isolated side 调用 .call 的对象（origTZO、navLangDesc.get、h 等）均为 Xray 视图 → 不受影响（r9 证据），SUPPRESSED 于生产路径**。
+- **Q3（makePageFn 生成的 page-realm wrapper 内 realm 归属，r9/r10 protos 页）**：
+  - `impl.call(this)`、`impl.apply(this, arguments)`、`realQuery.call(perms,...)`、`JSON.parse(...)`、`supportedLocalesOf.apply(realCtor, arguments)` 全部 **trapped=1、结果 undefined**（JSON.stringify 丢弃 undefined 字段）→ **全部受页面 realm 控制，页面替换 Function.prototype.call/apply 或 window.JSON.parse 后全部被截获**。
+  - globals 页（只替换 window.Function 等、不替换 prototype）→ 全部正常（impl-ok/promise/{"a":1}/apply-ok）→ 截获面 = Function.prototype.call/apply + JSON.parse 的替换。
+  - **裁决：Q3 = VALID**。生产代码全部 8 处 wrapper 内 `.call/.apply/JSON.parse` lookup 均在页面 realm → 页面可在 content script 之后替换这些 intrinsic，迫使 GeoMirror getter/query 返回 undefined（控制返回路径，无 host 数据泄漏但破坏功能）→ **任务 2 修复对象**。
+- **Q4（空 about:blank iframe 时序，r8/r10 blank 页）**：
+  - 实测顺序：parent `appendChild(ifr)`（t0）→ parent 首次读 child（firstRead）→ **child content script 到达（cs-arrival, poisonDoneAtArrival=false）早于 parent `eval(poison)` 约 8ms** → parent-poison-eval → parent-late-read（3s 后，childPoisonDone=true）。
+  - **裁决：Q4 = PLATFORM（Firefox 时序窗口存在且可测量：child content script 先于 parent 的 child-realm poison 注入）；产品信任完整性 = 不成立（GeoMirror 的 document_start 捕获先于任何页面脚本；about:blank child 仅报告到达，不执行检测逻辑）→ NOT APPLICABLE 于生产路径，记录为平台事实**。
+- harness 修复记录：`</script>` JSON 转义（`<\/script>`）、`document.body||document.documentElement`（head 期 body null）、trapCount 去 `.filter/.map`（页面数组方法 Xray 拒绝）、sloApply wrapper 形态对齐生产（`r.apply(r,args)`）。r8–r10 全绿。
+- 证据：`../evidence/firefox-security-1.2.5/final-callable-closure/rounds/r1..r10/`（r1=19:34 原始证据；r8/r9/r10=完整数据轮；bisect-run/=逐表达式定位轮）。
+
+## 任务 2 完成（2026-08-16 21:5x）：wrapper 内 call-time lookup 最小修复
+
+- **VALID 面（Q3 实测）**：8 处 makePageFn wrapper 体内 `.call/.apply/JSON.parse` 属性查找，页面替换 Function.prototype.call/apply 或 window.JSON.parse 后全部被截获（语言 getter→undefined、Intl 构造→坏实例 TypeError、supportedLocalesOf→undefined）。
+- **修复（content-isolated.js，白名单）**：document_start 一次性捕获 `pageJSONParse = rawWin.JSON.parse` 与 `pageInvoke = exportFunction((fn,self,args)=>Reflect.apply(fn,self,args), rawWin)`（isolated-side 帮手，宿主原版 Reflect）；全部 8 处 wrapper 改为 `invoke(impl, this, arguments)` / `parse(json)` 闭包参数直接调用，零 call-time 成员/全局查找；supportedLocalesOf 成员在捕获点取（realDTF/realNumFmt/realCol）。
+- **RED→GREEN→RED→GREEN 原始证据（hostile-run/，fresh Firefox 153.0.4）**：
+  - RED#1（旧实现 abc74259/299b87d2 进 diag-ext hostile 页）：language/languages/slo=undefined、dtf/numFmt=TypeError。
+  - GREEN#1（修复版 21c21d89→80bc3757 副本）：language=en-US、languages=en-US,en、tzo=0、slo=en-US、dtf=UTC、numFmt=1,234.5 全恢复。
+  - RED#2（项目外临时副本 git show HEAD 旧版再跑）：同 RED#1 全部复现。
+  - GREEN#2（修复版恢复）：同 GREEN#1 全绿。
+  - 生产工作区从未加载旧实现（旧版只在 evidence 项目外副本）。
+- **功能矩阵（matrix-run/，修复版 + Paris/Tokyo profile）**：tz=Europe/Paris、tzo=-120、lang=fr-FR、langs=fr-FR,fr、slo=en-US、perm=granted、geo=pos:48.8566,2.3522,acc:29.5、watch 2 次后 clearWatch 生效（callbacksAfterClear=0）；动态切换 Asia/Tokyo+en-US 生效（tz=Asia/Tokyo、tzo=-540）。Accept-Language 面 = languages 数组与 profile 一致 ✓。
+- **静态回归**：91 tests passed/0 skipped（新增 1 条 T-FINAL wrapper 模板无截获断言 + 加强 NPO hook 断言为 invoke 闭包形态）、smoke PASS、全部 node --check PASS、build 17、lint 0/0/0、git diff --check PASS。
+- **harness 限制（已记录，非产品问题）**：temporary addon 无 background，跨 document storage.onChanged 广播未验证（self-set 同一文档触发正常）；子 frame profile 传递依赖 background runtime 消息（T2-cross-realm 已有独立证据），本 harness 不覆盖；权限 pending 路径 = T2A 既有原始证据，未重做。
+- 证据：`../evidence/firefox-security-1.2.5/final-callable-closure/{rounds/r1..r10,bisect-run,hostile-run,matrix-run}/` + `diag-ext/prod/`（旧版 299b87d2 与修复版 80bc3757 副本）。
+
+
 ## 最终治理收口（2026-08-16，final-governance-closeout，当前有效口径）
 
 - **三轴裁决**：PRODUCT **ACCEPT**（修复行为真实有效）；EVIDENCE CRYPTOGRAPHIC AUTHENTICITY **REJECT**（证据目录不能密码学自证历史）；OPERATIONAL RELEASE READINESS **ACCEPT**（可信独立执行者 + 管理锚防锚后改动的运营模型下）。

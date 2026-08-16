@@ -5,9 +5,15 @@
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
 - **Source version `1.2.5` (commit `7c97f22`, PR #6, Firefox CI passed; not yet merged,
   signed, published, or installed)** carries
-  three accepted fix sets: the page-realm callable trust boundary (T1), the cross-realm
-  consistency fixes (T2), and the captured-`Promise.resolve`-member fix (T2A, closes the
-  call-time member-lookup crossing left by the T1 constructor capture), each proven
+  four accepted fix sets: the page-realm callable trust boundary (T1), the cross-realm
+  consistency fixes (T2), the captured-`Promise.resolve`-member fix (T2A, closes the
+  call-time member-lookup crossing left by the T1 constructor capture), and the
+  wrapper call-time lookup closure (T-FINAL, `final-callable-closure`: page-realm
+  wrapper bodies no longer resolve `.call`/`.apply`/`JSON.parse`/`Reflect` through
+  member or global lookup — a page replacing `Function.prototype.call/apply` or
+  `window.JSON.parse` after load can no longer intercept the wrappers' inner
+  invocation; proven RED→GREEN→RED→GREEN on real Firefox, evidence
+  `../evidence/firefox-security-1.2.5/final-callable-closure/`), each proven
   RED→GREEN→RED on frozen real-Firefox judges (evidence `../evidence/firefox-security-1.2.5/`).
   The last signed/installed version remains `1.2.4`.
 - **Final acceptance state (2026-08-16, `final-governance-closeout/`)**: PRODUCT ACCEPT;

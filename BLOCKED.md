@@ -4,6 +4,26 @@
 
 - None.
 
+## final-callable-closure round (2026-08-16) — no product blockers; harness limitations recorded
+
+- **No product blockers.** The T-FINAL fix (wrapper call-time lookup closure)
+  completed RED→GREEN→RED→GREEN on real Firefox; 91 tests/0 skipped; functional
+  matrix (Paris/Tokyo dynamic switch, permissions ready, geolocation
+  getCurrentPosition/watch/clear, languages/Accept-Language) all green on the
+  fixed production code.
+- **Harness limitations (not product defects), recorded for the evidence file:**
+  1. The diagnostic extension is a temporary add-on without a background page;
+     cross-document `chrome.storage.onChanged` broadcast was NOT observed in
+     this harness (same-document self-set fires normally). The product's
+     cross-frame/profile delivery does not rely on that path on Firefox 153
+     (subframe `chrome.storage` is dead — measured; the product uses the
+     content-script → background runtime channel, evidence T2-cross-realm).
+  2. Subframe profile delivery and the permissions pending path are covered by
+     existing frozen evidence (T2-cross-realm, T2A) and were not re-run here
+     (禁止重做已有原始证据的实验).
+  3. `http://127.0.0.1:<port>/*` content-script match patterns do not match in
+     Firefox (port-in-host); harness uses `<all_urls>` — see PROGRESS.md.
+
 ## Current acceptance state (2026-08-16, final-governance-closeout)
 
 - Three-axis verdict (full text: `../evidence/firefox-security-1.2.5/final-governance-closeout/FINAL_REPORT.md`, trust model: `SECURITY_MODEL.md`):
