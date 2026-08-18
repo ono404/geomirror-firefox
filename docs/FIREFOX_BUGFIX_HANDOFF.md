@@ -1,21 +1,44 @@
 # Firefox maintenance and release handoff
 
-## Current source state — 2026-08-14
+## Current source state — 2026-08-18 (1.2.5 PR candidate, NOT signed)
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
+- **Source version `1.2.5` (accepted product baseline `c8d9d6a`; subsequent commits through
+  `1e0d4ce` are documentation-only closeout; open PR #6, Firefox CI passed; not yet merged,
+  signed, published, or installed)** carries
+  four accepted fix sets: the page-realm callable trust boundary (T1), the cross-realm
+  consistency fixes (T2), the captured-`Promise.resolve`-member fix (T2A, closes the
+  call-time member-lookup crossing left by the T1 constructor capture), and the
+  wrapper call-time lookup closure (T-FINAL, `final-callable-closure`: page-realm
+  wrapper bodies no longer resolve `.call`/`.apply`/`JSON.parse`/`Reflect` through
+  member or global lookup — a page replacing `Function.prototype.call/apply` or
+  `window.JSON.parse` after load can no longer intercept the wrappers' inner
+  invocation; proven RED→GREEN→RED→GREEN on real Firefox, evidence
+  `../evidence/firefox-security-1.2.5/final-callable-closure/`), each proven
+  RED→GREEN→RED on frozen real-Firefox judges (evidence `../evidence/firefox-security-1.2.5/`).
+  The last signed/installed version remains `1.2.4`.
+- **Final acceptance state (2026-08-18)**: PRODUCT ACCEPT with the documented Firefox
+  platform limitations, and EVIDENCE ACCEPT. The authority is
+  `final-callable-closure-v4/REPORT-v4.md` plus the independent
+  `final-callable-closure-v4-clean-audit/CLEAN-AUDIT-REPORT.md`: frozen batch b1,
+  asynchronous permission-path enforcement, and 97/97 clean attacks PASS with 0 FAIL and
+  0 path pollution. This supersedes the 2026-08-16 `final-governance-closeout` evidence
+  rejection, which remains a historical record of the weaker chain. Remaining steps:
+  authorized merge → Mozilla signing → permanent-install verification. Each release step
+  is a separate authorization.
 - Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. PR #4 merged the maintenance candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; its pull-request and merged-main Firefox CI runs passed.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.
 - Private repository: `https://github.com/ono404/geomirror-firefox.git`.
 - `.github/workflows/firefox-ci.yml` runs on pull requests and pushes to `main`; the PR head and merged `main` both passed the Firefox source checks.
 - Firefox 153.0.4 independent acceptance: `ACCEPT` with 79 tests, build/lint, extension-off/on controls, Paris/Tokyo regional matrices, and server-observed `Accept-Language` coverage.
-- Firefox architecture: one ISOLATED content runtime (`content-isolated.js` + `lib/font-mask-isolated.js`), with no page-visible DOM bridge.
-- Accepted limitations: generic JavaScript wrapper source/stack differences and Geolocation `structuredClone` WebIDL internal-slot behavior.
+- Firefox architecture: one ISOLATED content runtime (`content-isolated.js` + `lib/font-mask-isolated.js`), with no page-visible DOM bridge. `1.2.5` adds `match_about_blank` + `match_origin_as_fallback` to the Firefox content script and a content-script → background runtime profile channel (subframe `chrome.storage` is dead on Firefox 153 — measured; see BLOCKED.md).
+- Accepted limitations: generic JavaScript wrapper source/stack differences, Geolocation `structuredClone` WebIDL internal-slot behavior, and the T2 platform limitations (workers and top-level `data:` documents cannot carry content scripts — classified C, recorded in the frozen matrix judge).
 - In this maintenance workspace, historical raw evidence lives outside the Git repository under `../evidence/`; it is not part of a GitHub clone.
 
 ## Signed-package state
 
-- Both source manifests declare formal version `1.2.4`.
+- Both source manifests declare candidate version `1.2.5` (PR #6; the signed manifest is `1.2.4`).
 - Current signed package: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`.
 - Signed package SHA-256: `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
 - Mozilla accepted and signed this unlisted XPI on 2026-08-14. Its manifest is `1.2.4`, Mozilla signature files are present, and its non-signature payload matches the accepted Firefox build (manifest JSON is semantically equal and packaged README text is equal after newline normalization; all other payload files are byte-identical).

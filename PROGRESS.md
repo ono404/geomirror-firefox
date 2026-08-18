@@ -1,5 +1,214 @@
 # GeoMirror Firefox current status
 
+## 当前权威状态（2026-08-18，neat-freak 知识收口）
+
+- 源码候选版本 `1.2.5`，已验收产品源码基线 `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`；分支 `agent/release-firefox-1.2.5` 在 neat-freak 前的远端 head 为文档收口提交 `1e0d4ce6e9f300933bed23fe4d865b64c0b437d9`。开放 PR #6 的 Firefox CI `completed/success`；本轮只会以文档提交继续推进 head，不改变产品树。
+- 最终裁决：**PRODUCT ACCEPT WITH PLATFORM LIMITATIONS**；**EVIDENCE ACCEPT**。现役证据为 `final-callable-closure-v4/REPORT-v4.md` 与 `final-callable-closure-v4-clean-audit/CLEAN-AUDIT-REPORT.md`；clean audit 97/97 PASS、0 FAIL、0 路径污染。
+- 产品源码在 v4/clean-audit 阶段 diff=0；本轮 neat-freak 只同步 README、技术说明、交接与状态文档，不改变扩展行为。
+- 发布状态严格分离：候选源码已推送且 PR/CI 通过，但**尚未 merge、Mozilla 签名、发布或永久安装**；最后已签名/已安装版本仍为 `1.2.4`。
+- 下文 2026-08-16 的 `final-governance-closeout` EVIDENCE REJECT 是旧证据链的历史裁决，已被 2026-08-18 的冻结 b1、异步语义裁决与独立 clean audit 取代，不再是当前结论。
+
+## 本轮：1.2.5 最终安全收口核实（final-callable-closure，2026-08-16 开工回执）
+
+- 目标：关闭剩余的 raw-page callable 信任问题——(a) 页面提前 poisoning 后 Xray `window.Function` vs `rawWin.Function` 的真实语义；(b) call-time `.call/.apply/member` lookup 是否可被页面截获；(c) makePageFn wrapper 内 impl/realQuery/JSON.parse/supportedLocalesOf 的 realm 归属；(d) about:blank pre-injection 时序窗口，分别裁决后做最小修复。
+- 顺序：基线核对（已完成，全部相符）→ P0 事实核实（fresh Firefox 最小实验，逐项 VALID/SUPPRESSED/PLATFORM/NOT APPLICABLE）→ 对 VALID 项 RED→GREEN→RED→GREEN 最小修复 → 全量回归 + hostile callable matrix + fresh Firefox 验收 → 白名单 diff 检查 → commit → push my-private → 只读确认 PR #6。
+- 最大风险：把「Xray 不可靠」或「时序窗口可消除」的未证实假设当结论；修复破坏 function name/length/prototype/instanceof/WebIDL parity；未复现却重构稳定代码。全部以实测为准，未复现记 SUPPRESSED。
+- 基线：HEAD 515c21a、content-isolated.js SHA abc74259…c768e、90 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff-check PASS、工作区干净（与任务书任务 0 完全一致）。
+- 证据目录：`../evidence/firefox-security-1.2.5/final-callable-closure/`（唯一新建许可）。
+
+## P0 事实核实完成（2026-08-16 21:3x，r8–r10 fresh Firefox 153.0.4 实测）
+
+- **注入之谜已解**：19:34 唯一成功轮（r1）与全部失败轮（r2–r7）的差异 = manifest `matches/host_permissions` 用 `<all_urls>` 还是 `http://127.0.0.1:19071/*`。Firefox match pattern **不支持端口**：带 `:19071` 的 pattern 不匹配任何页面 → content script 永不注入；`<all_urls>` 注入。r6 起全部轮次 globals/protos/blank ok=True。r5 的「失败」另有原因：残留 server（PID 14268，web-ext run 遗留）劫持 19071，新 server 绑定失败、Firefox 请求写进 webext-run/（其 raw.jsonl 有 cs-arrival 证据）。已清理残留进程。
+- **Q1（页面提前 poisoning 后 Xray vs raw，r9/r10 globals 页）**：
+  - `window.Function/Promise/EventTarget`（Xray 视图）→ 宿主原版：`xrayWrappedIsOrig=true`、`new window.Function('return 123')→123`、Promise/EventTarget 构造成功。页面替换 window.Function 不影响 Xray 视图。
+  - `window.wrappedJSObject.Function/Promise/EventTarget` → 页面 trap：`rawIsTrap=true`、`rawWin.Function('return 456')→not-fn`（trap 返回 undefined）。
+  - `window.Reflect.apply`（Xray 视图）→ **undefined**（调用 TypeError；未 poison 页面同样 undefined——Firefox Xray 对 Reflect.apply 的既有行为）；`rawWin.Reflect.apply` → 页面 trap。
+  - **裁决：Q1 = VALID（raw 视图在页面替换后是 trap）+ PLATFORM（Xray 视图 Reflect.apply 恒 undefined）。生产代码已在 document_start 一次性捕获 pageFnCtor 等（T1 fix），页面无法在捕获前替换（content script 先于页面脚本）→ 捕获路径 SUPPRESSED（无需改）**。
+- **Q2（capturedPageFunction.call 是否被页面 Function.prototype.call 截获，r9/r10 protos 页）**：
+  - isolated world 内 `window.Function.call(...)`（Xray 视图）→ 7、trapped=0 → **不被截获**（Xray 保护 .call 属性）。
+  - isolated world 内 `rawWin.__orig.F.call(...)`（raw 视图捕获的原始构造器）→ **not-fn、trapped=1 → 被截获**。
+  - 直接调用 `rawOrigFn('return 9')` → 9、trapped=0 → 直接调用不经 .call，不被截获。
+  - **裁决：Q2 = VALID（raw 视图函数 .call 被页面 Function.prototype.call 截获）；但生产代码在 isolated side 调用 .call 的对象（origTZO、navLangDesc.get、h 等）均为 Xray 视图 → 不受影响（r9 证据），SUPPRESSED 于生产路径**。
+- **Q3（makePageFn 生成的 page-realm wrapper 内 realm 归属，r9/r10 protos 页）**：
+  - `impl.call(this)`、`impl.apply(this, arguments)`、`realQuery.call(perms,...)`、`JSON.parse(...)`、`supportedLocalesOf.apply(realCtor, arguments)` 全部 **trapped=1、结果 undefined**（JSON.stringify 丢弃 undefined 字段）→ **全部受页面 realm 控制，页面替换 Function.prototype.call/apply 或 window.JSON.parse 后全部被截获**。
+  - globals 页（只替换 window.Function 等、不替换 prototype）→ 全部正常（impl-ok/promise/{"a":1}/apply-ok）→ 截获面 = Function.prototype.call/apply + JSON.parse 的替换。
+  - **裁决：Q3 = VALID**。生产代码全部 8 处 wrapper 内 `.call/.apply/JSON.parse` lookup 均在页面 realm → 页面可在 content script 之后替换这些 intrinsic，迫使 GeoMirror getter/query 返回 undefined（控制返回路径，无 host 数据泄漏但破坏功能）→ **任务 2 修复对象**。
+- **Q4（空 about:blank iframe 时序，r8/r10 blank 页）**：
+  - 实测顺序：parent `appendChild(ifr)`（t0）→ parent 首次读 child（firstRead）→ **child content script 到达（cs-arrival, poisonDoneAtArrival=false）早于 parent `eval(poison)` 约 8ms** → parent-poison-eval → parent-late-read（3s 后，childPoisonDone=true）。
+  - **裁决：Q4 = PLATFORM（Firefox 时序窗口存在且可测量：child content script 先于 parent 的 child-realm poison 注入）；产品信任完整性 = 不成立（GeoMirror 的 document_start 捕获先于任何页面脚本；about:blank child 仅报告到达，不执行检测逻辑）→ NOT APPLICABLE 于生产路径，记录为平台事实**。
+- harness 修复记录：`</script>` JSON 转义（`<\/script>`）、`document.body||document.documentElement`（head 期 body null）、trapCount 去 `.filter/.map`（页面数组方法 Xray 拒绝）、sloApply wrapper 形态对齐生产（`r.apply(r,args)`）。r8–r10 全绿。
+- 证据：`../evidence/firefox-security-1.2.5/final-callable-closure/rounds/r1..r10/`（r1=19:34 原始证据；r8/r9/r10=完整数据轮；bisect-run/=逐表达式定位轮）。
+
+## 任务 2 完成（2026-08-16 21:5x）：wrapper 内 call-time lookup 最小修复
+
+- **VALID 面（Q3 实测）**：8 处 makePageFn wrapper 体内 `.call/.apply/JSON.parse` 属性查找，页面替换 Function.prototype.call/apply 或 window.JSON.parse 后全部被截获（语言 getter→undefined、Intl 构造→坏实例 TypeError、supportedLocalesOf→undefined）。
+- **修复（content-isolated.js，白名单）**：document_start 一次性捕获 `pageJSONParse = rawWin.JSON.parse` 与 `pageInvoke = exportFunction((fn,self,args)=>Reflect.apply(fn,self,args), rawWin)`（isolated-side 帮手，宿主原版 Reflect）；全部 8 处 wrapper 改为 `invoke(impl, this, arguments)` / `parse(json)` 闭包参数直接调用，零 call-time 成员/全局查找；supportedLocalesOf 成员在捕获点取（realDTF/realNumFmt/realCol）。
+- **RED→GREEN→RED→GREEN 原始证据（hostile-run/，fresh Firefox 153.0.4）**：
+  - RED#1（旧实现 abc74259/299b87d2 进 diag-ext hostile 页）：language/languages/slo=undefined、dtf/numFmt=TypeError。
+  - GREEN#1（修复版 21c21d89→80bc3757 副本）：language=en-US、languages=en-US,en、tzo=0、slo=en-US、dtf=UTC、numFmt=1,234.5 全恢复。
+  - RED#2（项目外临时副本 git show HEAD 旧版再跑）：同 RED#1 全部复现。
+  - GREEN#2（修复版恢复）：同 GREEN#1 全绿。
+  - 生产工作区从未加载旧实现（旧版只在 evidence 项目外副本）。
+- **功能矩阵（matrix-run/，修复版 + Paris/Tokyo profile）**：tz=Europe/Paris、tzo=-120、lang=fr-FR、langs=fr-FR,fr、slo=en-US、perm=granted、geo=pos:48.8566,2.3522,acc:29.5、watch 2 次后 clearWatch 生效（callbacksAfterClear=0）；动态切换 Asia/Tokyo+en-US 生效（tz=Asia/Tokyo、tzo=-540）。Accept-Language 面 = languages 数组与 profile 一致 ✓。
+- **静态回归**：91 tests passed/0 skipped（新增 1 条 T-FINAL wrapper 模板无截获断言 + 加强 NPO hook 断言为 invoke 闭包形态）、smoke PASS、全部 node --check PASS、build 17、lint 0/0/0、git diff --check PASS。
+- **harness 限制（已记录，非产品问题）**：temporary addon 无 background，跨 document storage.onChanged 广播未验证（self-set 同一文档触发正常）；子 frame profile 传递依赖 background runtime 消息（T2-cross-realm 已有独立证据），本 harness 不覆盖；权限 pending 路径 = T2A 既有原始证据，未重做。
+- 证据：`../evidence/firefox-security-1.2.5/final-callable-closure/{rounds/r1..r10,bisect-run,hostile-run,matrix-run}/` + `diag-ext/prod/`（旧版 299b87d2 与修复版 80bc3757 副本）。
+
+## 交付完成（2026-08-16 22:0x）：本地验收全绿 + GitHub 最后一步
+
+- 最终静态验收（生产工作区）：**91 tests passed/0 skipped**、smoke PASS、全部 node --check PASS、build 17、lint 0/0/0、git diff --check PASS。
+- 白名单 diff：仅 content-isolated.js、test/run-tests.js（新增 1 条 + 加强 1 条）、PROGRESS.md、BLOCKED.md、docs/TECHNICAL.md、docs/FIREFOX_BUGFIX_HANDOFF.md 6 文件；无其他改动。
+- 本地 commit `5dd21e2`（T-FINAL），push my-private `agent/release-firefox-1.2.5`（515c21a..5dd21e2）成功。
+- PR #6 只读确认：head=5dd21e2、base=main、OPEN、MERGEABLE、Firefox CI COMPLETED/SUCCESS。未 merge、未签名、未发布、未安装（main/签名/发布/安装改动数 0）。
+- BLOCKED.md 随交付提交：无产品阻塞，harness 限制已记录。
+- 修复—验收循环：1 轮闭环（未到 3 轮上限）。
+
+
+## 历史治理收口（2026-08-16，final-governance-closeout；已被 2026-08-18 最终裁决取代）
+
+- **三轴裁决**：PRODUCT **ACCEPT**（修复行为真实有效）；EVIDENCE CRYPTOGRAPHIC AUTHENTICITY **REJECT**（证据目录不能密码学自证历史）；OPERATIONAL RELEASE READINESS **ACCEPT**（可信独立执行者 + 管理锚防锚后改动的运营模型下）。
+- **当前发布状态**：修复阶段已结束，1.2.5 源码提交 `7c97f22` 已推送到 `agent/release-firefox-1.2.5` 并进入 PR #6，Firefox CI 已通过。尚未授权合并、Mozilla 签名、发布或永久安装；最后正式版仍是 1.2.4。
+- 完整模型与裁决：`../evidence/firefox-security-1.2.5/final-governance-closeout/SECURITY_MODEL.md` 与 `FINAL_REPORT.md`；最终锚 `FINAL_ANCHOR.json`。
+- 历史口径修正：下文 2026-08-14 的"v2 PRODUCT ACCEPT + EVIDENCE ACCEPT"中，**EVIDENCE ACCEPT 已撤销**（v3 报告 2026-08-15 实测 v2 链可旁路）；PRODUCT ACCEPT 经两次独立 fresh 运行复核维持。
+- v3 证据链边界：judge 只能验证目录内部一致性（52 项部分伪造全 RED），不能认证历史真实性——完整自洽伪造（c07/c09b）被四 judge 接受，攻击验收 **REJECT**（保留，不改称通过）。非攻击检查 **ACCEPT**（manager-review-v3-ai2，四任务各3轮 fresh Firefox 全 PASS）。
+
+## 独立正式验收 v2（2026-08-14 开工回执，10 行内）
+
+- HEAD d885ab4140f82fee211988c9cbbdfbd2a67182fe，main...my-private/main，11 白名单改动未提交。
+- content-isolated.js SHA 91efbc55…、background.js 70101a7d…；双 manifest=1.2.5。全部相符。
+- 基线复跑：89 tests/0 skipped、smoke PASS、13 syntax PASS、build 17 文件、lint 0-0-0、diff-check 绿、包内 bridge/inject=0。
+- 旧 judge SHA 复验：T1 fe163c1f…952c2、T2 4bf66d10…04dec（只读，不修改）。
+- 计划：T1 重建自包含+源码绑定 v2 证据链（fresh profile 各 3 轮 + 5 类来源攻击全 RED）→ T2 两裁决（Promise 成员篡改、跨 frame 动态更新）→ T3 收口 REPORT。
+- 证据目录：../evidence/firefox-security-1.2.5/independent-acceptance-v2/（唯一新建许可）。
+
+## 独立验收 v2 进行中（2026-08-14 18:xx）
+
+- v2 证据链架构完成并自检：每轮自包含（round.json/env.json/ext/raw.jsonl/sha256sums.txt），
+  roundId 绑定所有 raw 行；judge 重算 ext SHA + 复取 manifest 关键字段；链自检 5 攻击全 RED。
+- T1-callable-v2：3 轮 GREEN（judge-v2.py exit 0，host=Asia/Singapore，cis=91efbc55…），
+  5 类来源攻击全 RED、还原 GREEN（ATTACK_RUNNER PASS）。
+- T2A-promise-member-v2 实测（immediate-seed 3 轮，归档 run-t2a-immediate-seed-20260814）：
+  **member 篡改成立 3/3**——扩展 call-time 调用页面替换的 Promise.resolve 成员（3 次），
+  参数仅为 page-realm PermissionStatus（state=granted，无 host 值），marker 模式证明
+  扩展 query 输出被页面控制（control.marker=True）。pending 路径当时未触发（storage 先就绪）。
+- harness 加固（driver+serverlib）：每会话重置 seeded.flag（消除 probe 先于安装的竞态）；
+  promise-pending 会话 /ipapi 慢 6s（确定性制造空 storage 窗口）；probe 名可配置
+  （matrix/switch 探针 404 修复）。T1/T2A/T2B 已用加固 harness 重跑中；T2-matrix 旧轮
+  （probe 404 无效）已归档 run-matrix-probe404-20260814，待重跑。
+
+## T2A 裁决：FIX 成立（2026-08-14，成员捕获最小修复）
+
+- **冻结 judge**：T2A-promise-member-v2/judge-v2.py SHA `bff6fcb0…28f5`（先于修复冻结）。
+- **current=RED**（加固 harness 3 轮，exit 1，10 fail）：member 篡改下扩展 call-time 调用
+  页面替换的 Promise.resolve 成员（3/3 轮，每轮 3 次），marker 模式证明 query 输出被页面
+  控制（marker=True、controlReturned=True）；参数仅为 page-realm PermissionStatus
+  （state=granted、ownKeys=0、toJson={}，无 host 值、无扩展侧对象）。
+- **pending 路径实测不可拦截**（慢 mock 制造空 storage 窗口）：`new window.Promise(executor)`
+  经 Xray 使用页面 intrinsic，页面替换的 Promise 构造函数从未被调用（ctorCalls=0 ×3 轮、
+  ctorCallsAtQuery=0），查询仍正确返回 granted——无需修复，记录为负证据。
+- **candidate=GREEN**（3 轮，冻结 judge exit 0，cis=`abc74259…`）：content-isolated.js 捕获
+  `pagePromiseResolve = rawWin.Promise.resolve`（document_start），ready 路径改用
+  `pagePromiseResolve.call(pagePromiseCtor, buildPermissionStatus())`；member calls=0、
+  control 无标记、perm granted、sentinel 全绿；消息面/页面可见面零增加。
+- **restore=RED**（恢复旧行为 `pagePromiseCtor.resolve(...)`，1 轮）：member calls=3、
+  marker=True → 冻结 judge exit 1（4 fail）；修复已还原，T2A 再全 GREEN。
+- 静态：90 tests/0 skipped（新增 1 条 STRUCTURAL 成员捕获断言）、smoke/syntax 绿。
+- 其余：T1/T2-matrix/T2B 用最终源码（abc74259…）重跑中。
+
+## 独立验收 v2 — 完成（2026-08-14，历史记录：PRODUCT ACCEPT + EVIDENCE ACCEPT；其中 EVIDENCE ACCEPT 已于 2026-08-15 被 v3 报告撤销，见顶部最终口径）
+
+- T1-callable-v2 最终（cis=abc74259…）：3 轮 GREEN，judge `265a72fd…` exit 0；5 攻击全 RED、还原 GREEN。
+- T2A 修复闭环：冻结 judge `bff6fcb0…`；current RED（10 fail）→ candidate GREEN（3 轮 exit 0）→
+  restore RED（4 fail）→ 还原 GREEN；pending 构造路径实测不可拦截（Xray intrinsic，负证据 3 轮）。
+- T2-matrix-v2 最终：3 轮 GREEN，judge `5d0c99a8…` exit 0（13 realm；data-popup 显式平台阻断记录）；
+  5 攻击全 RED、还原 GREEN。
+- T2B-switch-v2 最终：3 轮 GREEN，judge `d3f0c9b5…` exit 0——8 可修复 frame 东京→巴黎 3/3
+  （initial-final/switch-final 均 forced=False），C 类（worker/sharedworker）恒 host 记录，
+  data-popup=平台阻断记录；seed 诊断证明 storage.onChanged→广播链生效；5 攻击全 RED、还原 GREEN。
+- 平台事实细化（BLOCKED.md/TECHNICAL.md）：Firefox 153 阻止顶层 data: 导航（popup 停留 about:blank，
+  href=''，脚本不执行）——旧“data-popup=host 值”记录为空转读数；C 类记录改为显式平台阻断。
+- 收口：90 tests/0 skipped、smoke、13 syntax、build 17、lint 0-0-0、diff-check 绿、包内 bridge/inject=0、
+  双 manifest=1.2.5、越界改动=0（仅白名单 11 文件）；测试 Firefox 残留=0、v2 端口无监听。
+- 报告：`../evidence/firefox-security-1.2.5/independent-acceptance-v2/REPORT.md`（历史记录：PRODUCT/EVIDENCE 双 ACCEPT；EVIDENCE ACCEPT 已撤销——v2 链 live-source binding 受条件式 isdir 旁路，见 v3 报告）。
+- 未 commit/push/merge/tag/sign/install；1.2.5 仍为本地源码（未签名版本 1.2.4 不变）。
+
+## 本轮：Firefox 1.2.5 page-realm callable 信任边界 + 跨 realm 矩阵 — 2026-08-14 开工回执
+
+- 目标：先证明、再修复 isolated runtime 的 page-realm callable 信任边界与跨 realm 地域一致性；保持 isolated-only，通过后源码升 1.2.5。
+- 顺序：T0 基线 → T1 callable 篡改 probe/审计/裁决 → T2 跨 realm 矩阵/裁决 → T3 收口。
+- 最大风险：Firefox 平台限制或需高风险架构才可解的现实泄漏 → 归 C/B 如实 BLOCKED，不伪造修复。
+- HEAD `d885ab4140f82fee211988c9cbbdfbd2a67182fe`（main==my-private/main，工作树干净）；content-isolated.js SHA-256 `ddcf60c94c…cdd9954`。
+- 基线：89 tests / smoke PASS / 13 syntax 0 失败 / build 17 文件 / lint 0-0-0 / `git diff --check` clean；双 manifest=1.2.4。
+
+## T1 进行中（2026-08-14）：harness 建成 + 首轮发现
+
+- harness：`../evidence/firefox-security-1.2.5/T1-callable-trust/`（server 18971 / RDP 18972 / BiDi 18973；
+  直接启动 + RDP installTemporaryAddon；生产 background+content 逐字节复制，仅 providers/geo 指向本地 mock；
+  seed 写东京 profile 到 storage.local；gate 等待 seed 完成后再导航 probe）。
+- 审计（audit.md）：rawWin/wrappedJSObject/exportFunction 全部 56 处按 CAPTURE/DATA-READ/EXECUTION 分类；
+  3 类 call-time 执行候选：`makePageFn`=live `rawWin.Function`（39 行，tzOffsetMinutes 每次调用把
+  realDTF 传进 page 函数）、`buildPermissionStatus` live `rawWin.EventTarget`（775/792 行）、
+  `rawWin.Promise.resolve`（841 行）；另有 3d：`fn.prototype = realProto` 使
+  `Intl.X.prototype.constructor` 直指 REAL 捕获构造器。
+- 首轮实测（Firefox 153.0.4，host=Asia/Singapore+zh-Hans-CN）：**3d 泄漏成立**——on-clean/on-fn 轮
+  `Intl.DateTimeFormat.prototype.constructor` 非 live 且 `new (它)().resolvedOptions()` 返回
+  真实 host tz/locale（Asia/Singapore / zh-Hans-CN），页面 spoof 面仍显示 Tokyo/ja-JP；NumberFormat/
+  Collator 同；dtfProtoCtorIsLive=false（shape parity 破坏）。fn tamper 轮因 harness 404 未捕获
+  spy 数据（harness 修复中：tamper 文件名映射、tamper 字段名冲突、storage 竞态 gate /ready）。
+- 归档：`ct-run-r1-broken-harness/`（首轮含 harness bug 数据，不用于裁决）。
+
+## T1 裁决：FIX 成立（2026-08-14，四类 crossing 全 RED→candidate GREEN→restore RED）
+
+- **冻结 judge**：`T1-callable-trust/judge-callable.py` SHA `fe163c1f…952c2`（先于候选实现冻结；
+  一处 freeze amendment：Collator 规范 locale ja-JP→ja，断言改为与 live 面值一致）。
+- **current=RED**（3 轮 15 会话，`run-current-red/`，99 fail）：
+  1. `Intl.X.prototype.constructor` 直指 REAL 捕获构造器——零篡改即可 `new (protoCtor)().resolvedOptions()`
+     取回真实 host tz/locale（Asia/Singapore / zh-Hans-CN）——真实地域泄漏（on-clean ×3）；
+  2. 页面替换 `window.Function` 后，扩展 call-time `makePageFn` 走 live Function 11 次，其中 2 次把
+     捕获的 realDTF 传入 page 函数（rawFnArgCount=2），由它派生真实 host 值——capability crossing（on-fn ×3）；
+  3. `rawWin.Promise.resolve` call-time 执行页面代码（resolveCallCount=1，on-promise ×3）；
+  4. `buildPermissionStatus` call-time 构造页面 EventTarget（ctorCallCount=1，on-eventtarget ×3）。
+  所有轮次 sentinel 绿（Tokyo/ja-JP 收敛）、marker=0、页面 spoof 面正常（篡改透明）。
+- **candidate=GREEN**（`run-candidate-green/`，exit 0；candidate content-isolated.js SHA `0fe82d7f…`）：
+  修复=捕获 pristine page callables（pageFnCtor/pagePromiseCtor/pageEventTargetCtor）用于全部 call-time
+  构造 + `fn.prototype=realProto` 后把 realProto.constructor 重指 live wrapper（原生 parity 恢复）。
+- **restore 反向**：`src-restore-live-fn`（仅恢复 live Function 查找）RED 9 fail、
+  `src-restore-protoctor`（仅移除 constructor 闭包）RED 84 fail——judge 非空转且能单点判别。
+- **最终源码复验**：`run-final-t1-green/` judge PASS（final SHA `91efbc55…`）——T2 改动无回归。
+
+## T2 裁决：FIX 成立（2026-08-14，current RED→candidate GREEN→restore RED）
+
+- **冻结 judge**：`T2-cross-realm/judge-matrix.py` SHA `4bf66d10…`（基于真实测量冻结；
+  C 类 realm 契约=必须记录且等于 host 值）。
+- harness：13 realm（top/so-iframe/xo-iframe/about-blank/srcdoc/blob-iframe/data-iframe/
+  sandbox-blank/about-blank-popup/blob-popup/data-popup/worker/sharedworker），同源轮询读取、
+  跨源 postMessage；off 基线 3 轮 + on 各 3 轮。
+- **current=RED**（`run-mx-current-red/`）：about:blank/srcdoc/blob/data/sandbox 及 popup 类 realm
+  全部暴露真实 host（zh-CN/Asia/Singapore/-480）；http 子 frame wrapper 卡 bootstrap（UTC）
+  ——稳定 host/target 矛盾。
+- **平台事实（diag 实测）**：Firefox 153 子 frame content script 的 `chrome.storage.local.get`
+  报 "An unexpected error occurred"、onChanged 全哑；`runtime.sendMessage` 在每类 realm 都通。
+- **candidate=GREEN**（`run-mx-candidate-green/`，exit 0）：
+  1. manifest.firefox.json 增 `match_about_blank`+`match_origin_as_fallback`（A 类）；
+  2. content-isolated.js 经 runtime 消息向 background 请求 profile 快照 + onMessage 收更新推送
+     （B 类，子 frame storage 死路替代通道；页面 MAIN world 无法收发，无新页面面）；
+  3. background.js storage.onChanged 广播（tabs.query/sendMessage 到所有 frame）。
+  修复后除 C 类 realm 外全部收敛 Tokyo/ja-JP，marker=0。
+- **restore=RED**（`run-mx-restore-red/`）：旧行为复现 RED。
+- **C 类平台限制（如实记录，不伪造修复）**：worker/sharedworker 无 content script 通道；
+  顶层 data: 文档 opaque origin 无法匹配——恒读真实 host（judge 以 C 契约断言记录，
+  BLOCKED.md/TECHNICAL.md 已文档化）。
+- **最终源码复验**：`run-final-matrix-green/` judge PASS（final SHA `91efbc55…`）。
+
+## T3 收口（2026-08-14）
+
+- 双 manifest 同步 1.2.5（manifest.json 仅版本同步；Firefox 字段只进 manifest.firefox.json）。
+- 最终静态：89 tests / smoke / 13 syntax / build 17 文件 / lint 0-0-0 / `git diff --check` clean；
+  test/run-tests.js 仅扩展 vm sandbox storage.onChanged stub（环境完备，无断言放宽）。
+- 最终运行：T1 judge PASS + 矩阵 judge PASS（同一最终源码 SHA `91efbc55…`）。
+- 证据根：`../evidence/firefox-security-1.2.5/`（T1-callable-trust/、T2-cross-realm/）。
+- 1.2.5 为本地源码状态：未签名/未发布/未安装；最后已签名安装版仍是 1.2.4（BLOCKED/README 已区分）。
+
 ## Firefox 1.2.4 formal release closeout — 2026-08-14
 
 - Version `1.2.4` carries the accepted T1 fix, T2 governance mitigation, and T3 retained limitation. PR #4 merged the candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; PR and merged-main Firefox CI passed.
@@ -266,3 +475,84 @@
 ## Verification entry point
 
 Run the complete command set in `AGENTS.md`. Firefox runtime acceptance must use ordinary-page and server-side evidence with extension-off/on controls; static tests alone are insufficient.
+
+---
+
+## final-callable-closure-v2 执行轮（2026-08-18，执行者：v2 round executor）
+
+### 任务0 基线（实测通过，全部命令见对话记录）
+
+- git status：clean；branch `agent/release-firefox-1.2.5`；HEAD `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`（任务书要求 c8d9d6a ✓）
+- `content-isolated.js` SHA256 `80bc3757efa0b0e6f8aa17bf3176e9a1fcdd595c954e10dd14332e97b7803278` ✓（任务书要求 80BC…3278）
+- `node test/run-tests.js`：**91 passed / 0 skipped**，exit 0 ✓
+- `node test/inject-smoke.js`：PASS，exit 0 ✓
+- `node tools/build-firefox.mjs`：17 files，exit 0 ✓
+- `web-ext.cmd lint --source-dir dist/firefox`：errors 0 / notices 0 / warnings 0，exit 0 ✓
+- `git diff --check`：clean，exit 0 ✓
+- Firefox 153.0.4（`C:\Program Files\Mozilla Firefox\firefox.exe`）✓
+- 旧证据只读：`D:\LAB\火狐浏览器插件制作\evidence\firefox-security-1.2.5\final-callable-closure\`（REPORT.md 裁决 Q1-Q4；hostile-run / matrix-run 无 environment.json）
+- 旧 harness 实际可运行命令（已核实源码，未空转）：`python driver.py --rounds N [--only globals|protos|blank]`（fresh profile、RDP 19072、probe server 19071、gate 导航）、`node rdp-install.js <port> <addonDir>`（classic RDP length-prefixed JSON）。旧 Q4 probe-blank 顺序 `append → firstRead → poison`，**不满足 Phase B，弃用**。
+
+### v2 目标（10 行内）
+
+1. **目标**：真正验证 about:blank/子帧注入前 poisoning——A(appendChild 后第一条同步操作即 poison)、B(contentDocument.open/write/close 内首个 inline script poison)、C(srcdoc 首个 inline script poison) 各 3 轮 fresh profile；判定页面先 poison 时 GeoMirror 捕获的是否为 trap（Function/Promise/EventTarget/Function.prototype.call/apply/Reflect.apply/JSON.parse），trap 是否成为 trust root / 收到 host 数据 / 控制返回值。
+2. **顺序**：任务0 基线（已完成）→ 搭 v2 harness（driver/server/rdp-install/judge/attack-runner/diag-ext/probes，全部在 evidence v2 目录）→ phaseb-a×3 → phaseb-b×3 → phaseb-c×3 → 每轮 judge + 五类伪造攻击 fail-closed 验证 → 裁决（VALID → 任务2 最小修复 RED→GREEN→RED→GREEN；否则 ACCEPT WITH PLATFORM LIMITATION）→ matrix-current → 最终报告（PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）。
+3. **最大风险**：(a) 竞争时序逐轮抖动——每轮记录 iframe 创建/poison 开始完成/cs-arrival/捕获完成/首次读取/注入后读取的完整时间线，裁决以轮内时序为准；(b) trap 若破坏 GeoMirror 安装会退化为 DoS 而非"控制"——trap 返回功能兼容但带标记的受控对象，以 'CTRL:' 前缀与 fnUseCount 判控制；(c) 端口残留/残留 firefox 进程污染——每轮前 netstat + tasklist 校验；(d) 旧 harness 命令空转——不复用旧 rounds，全部新建。
+
+### Phase B 重做完成（2026-08-18，11 轮 + matrix-current，全部 judge exit 0）
+
+- **harness**（`evidence/firefox-security-1.2.5/final-callable-closure-v2/harness/`）：driver.py/server.py/rdp-install.js/judge.py/attack-runner.py/synth-check.py + diag-ext（生产 content-isolated.js + font-mask-isolated.js 副本 SHA 与 repo 一致、phaseb-diag.js 注入时刻 poison 探测、seed-bg.js Paris→Tokyo 种子）；poison-src.js 硬约束（无双引号、无 script 闭合序列）由 check-poison.mjs 每轮前置校验；合成自检（synth-check.py）先行通过（未篡改=0、五类攻击全部 fail-closed）。
+- **路径 A**（append 后第一条同步操作 eval poison）：r1/r2/r3 全 NEGATIVE——child cs-arrival 早于 poison-done ~5-6ms（content script 在 appendChild 同步过程中即注入），poisoned=False，trap 全 0（F/JP/PR/ET/call/apply/RA/fnUse），读取值正常 spoof（fr-FR/Europe/Paris/geo=pos）。
+- **路径 B**（open/write/close 首个 inline script poison）：r1（diag 辅助行偶发丢失但 trapDone+全0+值正常可裁决）/r2/r3/r4 全 NEGATIVE——cs-arrival 早于 trapDone ~6-7ms，trap 全 0。
+- **路径 C**（srcdoc 首个 inline script poison）：r1/r2/r3/r4 全 NEGATIVE——srcdoc 解析为异步导航，diag 注入（poisoned=False）先于 inline script（r4 完整时间线 cs-arrival < trapDone 5ms）；trap 全 0。
+- **裁决**：三条路径页面先 poison 均未抢到；GeoMirror 从未消费 trap、受控函数从未被调用、trap 未收到任何 host 数据（trapRec 空）、注入后读取全部正常 spoof → **ACCEPT WITH PLATFORM LIMITATION**（Firefox 153.0.4 平台事实：document_start content script 注入先于 about:blank append 同步块、doc.open() 新文档 parser、srcdoc 文档 parser；页面 poison 永远晚于捕获）。**无 VALID 软件问题 → 任务2 不触发（产品源码 diff=0）**。
+- **matrix-current**（当前源码功能矩阵）：lang=en-US/langs=['en-US','en']/tz=Asia/Tokyo/tzo=-540/numFmt=1,234.5/slo=['en-US']/perm=granted/watch wid=1→clear 后回调停（cbs=2）；host 值（本机 Asia/Shanghai/-480/zh-CN）零泄漏；1s-8s 全一致（seed 切换在导航前完成）。
+- **五类伪造攻击**（attack-runner，12 个 run 目录全量）：MISSING-ENV/FAKE-SHA/SOURCE-DIR/STAGE-MISMATCH/CROSS-ROUND 全部 fail-closed 且 kind 匹配；原件 post-attack 仍 exit 0。
+- **静态验收**：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、git diff --check clean（PROGRESS.md 追加 23 行，产品源码 0 改动）。
+- **最终交付**：REPORT-v2.md（`evidence/firefox-security-1.2.5/final-callable-closure-v2/REPORT-v2.md`，PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）；BLOCKED.md v2 节 = 无；未 commit/push（执行者交付本地证据，push 待管理者指令）；残留检查：端口 19071/19072 空闲、无测试 firefox 进程。
+
+---
+
+## final-callable-closure-v3 执行轮（2026-08-18，REVISE 后重做）
+
+### 独立验收问题修复（对照）
+- judge 现在独立重算并比对全部哈希（frozenShas/harnessShas/diagFiles/loadedSource ↔ run-local 副本 ↔ FROZEN-MANIFEST ↔ repo live-bind），不再只查字段存在。
+- 冻结契约 FROZEN-MANIFEST.json（batch b9，20 文件）；每轮 run 目录含完整 harness-snapshot/** + loaded-extension/** + artifact-manifest.json + environment.json（绝对路径与全量 SHA）；check-frozen 漂移即拒跑。
+- manifest 顺序 diag → font-mask → content-isolated → phaseb-after-prod.js（prod-ready 哨兵）；**事件序证明**：after-prod 置页面 `__pb_prodReady` 标志，poison 脚本记录 `prodReadyBefore`，judge 以 `prodReadyBefore===true` 为决定性时序检查（ms 时钟无法分离同 ms 的 prod/t0 时依然可证）。
+- judge 全语义裁决：spoof 值（fr-FR/Europe/Paris/geo=pos/numFmt）、trap 9 项全 0、无 CTRL、trapRec 空、无异常/TypeError/缺字段、时序链、matrix 分阶段语义（1s/3s=Paris、6s/8s=Tokyo）、watch clear 后回调不增、perm=granted、host 值零泄漏、probe 重生成比对。
+- REPORT-v3 如实区分正式轮（b9：9+1 全 judge exit 0）与 excluded（b1-b8 试跑/作废轮次全部归档并标注原因，未删除未补写）。
+
+### b9 正式结果（单一冻结批次）
+- A×3、B×3、C×3 + matrix-current 全部 judge exit 0；9 轮 prodReadyBefore=true、trap F/P/PR/ET/call/apply/RA/JP/fnUse 全 0、trapRec 空、读取全为正常 spoof 值。
+- B 路径 child 早期 fetch 被 doc.open() 打断的问题：diag/after-prod 投递改 keepalive+重试（b3 trial 验证修复）。
+- 暗测：10 个正式 run × 17/15 类（a1-a14、a11b）共 167 次攻击全部 fail-closed 且 kind 匹配；合成自检（stage-a/c/matrix 三套）先行通过；原件 post-attack 全 exit 0。
+- 静态验收：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff check clean；产品源码 diff=0。
+- 最终报告：evidence/firefox-security-1.2.5/final-callable-closure-v3/REPORT-v3.md（PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）。
+
+---
+
+## final-callable-closure-v4 执行轮（2026-08-18，异步权限路径验证）
+
+### 验收缺口修复（独立验收指出：18/18 读取点 permPending、perm 缺失）
+- probe readChild 异步化：geolocation + permissions.query **双回调状态计数**（非 Promise.all 信任根）+ 4s 有界定时器；两项均结算后才采集 trap 快照（九项计数/trapRec/prodReadyBefore/trapT0/trapDone）并上报；单上报守卫防重复行；超时行写 geoTimeout/permTimeout。
+- judge 强制：perm 必须存在且严格 =granted；permPending/permErr/permThrow/permTimeout/geoErr/geoThrow/geoTimeout 任一存在即 SAFETY-SEMANTICS；全行 CTRL 扫描；DUPLICATE-ROW（page 行重复即失败）；无 "when present" 式裁决。
+- synth-check 正常样本一律 perm=granted（禁止 permPending 合法化）；新增 10 类异步攻击（a15 删 perm / a16 pending / a17 rejected / a18 permErr / a19 permThrow / a20 permTimeout / a21 结算后 trap 注入 / a22 CTRL 注入异步字段 / a23a 重复行 / a23b 删异步快照字段）。
+- 开发合成自检（dev1 脚手架）全绿后冻结正式 batch b1；REPORT-v4 统一使用实际 batch 编号。
+
+### b1 正式结果（v4 唯一正式批次，全部 judge exit 0）
+- A×3、B×3、C×3 + matrix-current 共 10 轮；**18/18 读取点 perm=granted、0/18 permPending/permErr/permThrow/permTimeout、0/18 geo 异常/超时**；trap 九项全 0（异步双结算后快照）、trapRec 空、无 CTRL、prodReadyBefore 18/18 true；读取值全为正常 spoof。
+- matrix：1s/3s=fr-FR/Europe/Paris/-120、6s/8s=en-US/Asia/Tokyo/-540、perm=granted、watch clear 后 cbs 1→1。
+- 暗测：10 个正式 run × 27/19 类 = 259 次攻击全部 fail-closed 且 kind 匹配；合成自检（stage-a/c/matrix）先行全绿；原件 post-attack 全 exit 0。
+- 静态验收：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff check clean；产品源码 diff=0。
+- 最终报告：evidence/firefox-security-1.2.5/final-callable-closure-v4/REPORT-v4.md。
+
+---
+
+## final-callable-closure-v4 clean audit（2026-08-18，独立验收后）
+
+- 独立验收确认 b1 正式 10 轮/18/18 perm=granted/0/18 pending/trap 结算后全 0/frozen 复算/diff=0 均通过；指出 attack-runner 副本路径污染（未重绑定 extensionDirAbs/sourceDirAbs/snapshotDirAbs → 副本天然触发 EXT-DIR/SOURCE-DIR/FAKE-SHA/ARTIFACT-MANIFEST），且 matrix 攻击数应为 16 类而非 19 类。
+- 新建独立验收工具目录 evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/（clean-attack-audit.py、audit-environment.json、attacks/ 97 份输出、full-clean-audit.log、CLEAN-AUDIT-REPORT.md）。工具为事后独立验收件，不属于 b1 冻结 harness；未修改 v4/FROZEN-MANIFEST/正式 run/产品源码。
+- clean audit 机制：每攻击前复制 run 到项目外临时目录 → 重绑定三个绝对路径到副本内部 → 重建 artifact-manifest → 冻结 judge 必须先过 clean baseline（exit 0 / failKinds=[]）→ 攻击 → 单故障隔离（a23a 同步补 access POST、a12 删行删 POST、a5 除外；统一重建 manifest；EXT-DIR/SOURCE-DIR[非a3]/ARTIFACT-MANIFEST 出现即 FAIL；完整 failKinds 落盘）。
+- 结果：代表性 A/B/C/matrix 各一轮 × 27/27/27/16 = **97/97 PASS、0 FAIL、0 污染**；原件 post-attack re-judge 全 exit 0。
+- REPORT-v4.md 已更正：matrix 16 类；4.1 如实说明原 attack-runner 污染（不再称为完全隔离暗测）；4.2 单独列出 clean audit 逐项（clean baseline exit / attack exit / 精确 failKinds / pollution）；EVIDENCE=ACCEPT（clean audit 全过后），PRODUCT 保持 ACCEPT WITH PLATFORM LIMITATIONS。
+- 未重跑 Firefox、未修改冻结 harness/正式 run/产品源码、未 commit/push。

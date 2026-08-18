@@ -32,11 +32,53 @@
 (function () {
   'use strict';
   const rawWin = window.wrappedJSObject;
-  // Build page-realm functions via the page's own Function constructor.
-  // Must NOT pass content-side objects (e.g. an args array via .apply): the
-  // page-side function reading a content array's .length is Xray-denied.
-  // Spread-call with primitive string args only.
-  const makePageFn = (...args) => rawWin.Function(...args);
+  // Pristine page-realm callables, captured ONCE at document_start BEFORE any
+  // page script can replace them (T1-callable-trust fix). All call-time
+  // construction must go through these captured references: a page that
+  // swaps window.Function / window.Promise / window.EventTarget after load
+  // must never be able to observe or intercept extension-triggered
+  // construction. (Proven crossing before the fix: the page-realm timezone
+  // helper received the captured real Intl.DateTimeFormat through a
+  // page-controlled Function and derived the real host timezone/locale —
+  // evidence `../evidence/firefox-security-1.2.5/T1-callable-trust/`.)
+  const pageFnCtor = rawWin.Function;
+  const pagePromiseCtor = rawWin.Promise;
+  const pageEventTargetCtor = rawWin.EventTarget;
+  // T2A fix: the pristine resolve MEMBER, captured at document_start. The
+  // constructor reference alone is not enough — `pagePromiseCtor.resolve`
+  // is a member lookup at call time on the page's own Promise object, so a
+  // page replacing Promise.resolve AFTER load intercepts the extension's
+  // permission-query resolution and controls its return value (proven with
+  // a marker-mode probe, evidence `../evidence/firefox-security-1.2.5/
+  // independent-acceptance-v2/T2A-promise-member-v2/`). The captured member
+  // is invoked with the captured constructor as `this` (Promise.resolve
+  // requires a constructor receiver).
+  const pagePromiseResolve = rawWin.Promise.resolve;
+  // Build page-realm functions via the page's own Function constructor,
+  // captured pristine. Must NOT pass content-side objects (e.g. an args
+  // array via .apply): the page-side function reading a content array's
+  // .length is Xray-denied. Spread-call with primitive string args only.
+  const makePageFn = (...args) => pageFnCtor(...args);
+  // T-FINAL (final-callable-closure) fix: page-realm wrapper bodies must
+  // NEVER resolve `.call` / `.apply` / `JSON.parse` / `Reflect.apply` through
+  // member or global lookup at call time. A page that replaces
+  // Function.prototype.call/apply, window.JSON.parse or window.Reflect.apply
+  // AFTER load intercepts those lookups and controls the wrapper's return
+  // value (proven on real Firefox: language/languages/supportedLocalesOf/Intl
+  // constructors all returned undefined or a broken instance under such a
+  // page; evidence `../evidence/firefox-security-1.2.5/final-callable-closure/`,
+  // Q2/Q3 + hostile matrix). Two pristine callables are captured ONCE here and
+  // passed into wrapper closures as plain parameters:
+  //   - `pageJSONParse`: the pristine page-realm JSON.parse, invoked directly
+  //     (JSON.parse needs no receiver);
+  //   - `pageInvoke`: an exported isolated-side helper that performs the
+  //     invocation with the pristine isolated Reflect.apply. Direct call, no
+  //     member lookup, no page-global lookup — the page cannot observe or
+  //     divert the wrapper's inner call.
+  const pageJSONParse = rawWin.JSON.parse;
+  const pageInvoke = exportFunction(function (fn, self, args) {
+    return Reflect.apply(fn, self, args);
+  }, rawWin);
 
   // ------------------------------------------------------------------ state --
   const BOOTSTRAP_PROFILE = {
@@ -123,6 +165,34 @@
       }
     });
   });
+  // T2-cross-realm: profile delivery fallback for SUBFRAMES. Measured on
+  // Firefox 153: chrome.storage in subframe content scripts fails with
+  // "An unexpected error occurred" — the initial get AND storage.onChanged
+  // are both dead there, leaving subframe wrappers stuck on the neutral
+  // bootstrap (top=Asia/Tokyo vs same-origin http subframe=UTC — a stable
+  // cross-realm contradiction, evidence T2-cross-realm/). The
+  // content-script -> background runtime channel works in every frame
+  // (measured), and the background's existing onMessage handler answers
+  // any message with the fresh {state, override, settings} snapshot, so
+  // the profile is also requested over that channel; updates are pushed
+  // over it by the background. No page-visible surface is created: the
+  // page (MAIN world) can neither send nor receive these messages.
+  const profileViaMessage = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'geomirror-profile' }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (resp && resp.override) loadFromStorage(resp);
+      });
+    } catch (_) {}
+  };
+  profileViaMessage();
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'geomirror-profile-update' && msg.data) {
+        loadFromStorage(msg.data);
+      }
+    });
+  } catch (_) {}
   // Safety net: never keep queued geolocation callbacks or permission
   // queries hanging forever.
   setTimeout(flushWaitersAfterTimeout, 12000);
@@ -226,11 +296,11 @@
   // null so the native binding raises the same error as extension-off), the
   // getter name matches the native "get <prop>" projection, arity stays 0.
   function pageDispatcher(impl, name) {
-    return makePageFn('impl', 'nm',
+    return makePageFn('impl', 'nm', 'invoke',
       '"use strict";' +
-      'const fn = function () { return impl.call(this); };' +
+      'const fn = function () { return invoke(impl, this, []); };' +
       'Object.defineProperty(fn, "name", { value: nm, configurable: true });' +
-      'return fn;')(impl, name);
+      'return fn;')(impl, name, pageInvoke);
   }
 
   function installPositionDispatchers() {
@@ -399,15 +469,26 @@
       return new realDTF(localeArg, opts);
     };
     const impl = exportFunction(wrapped, rawWin);
-    const ctor = makePageFn('impl', 'realProto', 'realCtor',
-      'const fn = function DateTimeFormat() { return impl.apply(this, arguments); };' +
+    // supportedLocalesOf member captured here (document_start) so the page
+    // cannot swap Intl.DateTimeFormat.supportedLocalesOf at call time either.
+    const realDTFSLO = realDTF.supportedLocalesOf;
+    const ctor = makePageFn('impl', 'realProto', 'realCtor', 'invoke', 'slo',
+      'const fn = function DateTimeFormat() { return invoke(impl, this, arguments); };' +
       'fn.prototype = realProto;' +
-      'fn.supportedLocalesOf = function () { return realCtor.supportedLocalesOf.apply(realCtor, arguments); };' +
-      'return fn;')(impl, realDTF.prototype, realDTF);
+      // Constructor closure (T1-callable-trust fix): the REAL prototype's
+      // `constructor` slot must point at the LIVE surface (the wrapper),
+      // exactly as the extension-off baseline has prototype.constructor ===
+      // Intl.DateTimeFormat. Before the fix the slot still pointed at the
+      // captured REAL constructor, so the page recovered the real
+      // Intl.DateTimeFormat via `Intl.DateTimeFormat.prototype.constructor`
+      // and read the real host timezone/locale from it (proven).
+      'try { Object.defineProperty(realProto, "constructor", { value: fn, writable: true, enumerable: false, configurable: true }); } catch (e) {}' +
+      'fn.supportedLocalesOf = function () { return invoke(slo, realCtor, arguments); };' +
+      'return fn;')(impl, realDTF.prototype, realDTF, pageInvoke, realDTFSLO);
     installValueSlot(rawWin.Intl, 'DateTimeFormat', ctor, origIntlDescs.DateTimeFormat);
   }
 
-  function applyLocaleCtor(realCtor, name, desc) {
+  function applyLocaleCtor(realCtor, name, desc, realSLO) {
     if (!realCtor || !desc) return;
     const wrapped = function () {
       const active = langActive();
@@ -419,11 +500,12 @@
       return new (Function.prototype.bind.apply(realCtor, [null].concat(Array.from(arguments))))();
     };
     const impl = exportFunction(wrapped, rawWin);
-    const ctor = makePageFn('impl', 'realProto', 'realCtor',
-      `const fn = function ${name}() { return impl.apply(this, arguments); };` +
+    const ctor = makePageFn('impl', 'realProto', 'realCtor', 'invoke', 'slo',
+      `const fn = function ${name}() { return invoke(impl, this, arguments); };` +
       'fn.prototype = realProto;' +
-      'if (realCtor.supportedLocalesOf) fn.supportedLocalesOf = function () { return realCtor.supportedLocalesOf.apply(realCtor, arguments); };' +
-      'return fn;')(impl, realCtor.prototype, realCtor);
+      'try { Object.defineProperty(realProto, "constructor", { value: fn, writable: true, enumerable: false, configurable: true }); } catch (e) {}' +
+      'if (slo) fn.supportedLocalesOf = function () { return invoke(slo, realCtor, arguments); };' +
+      'return fn;')(impl, realCtor.prototype, realCtor, pageInvoke, realSLO);
     installValueSlot(rawWin.Intl, name, ctor, desc);
   }
 
@@ -443,16 +525,16 @@
       if (!langActive()) return navLangsDesc.get.call(this);
       const langs = (cache.languages && cache.languages.length) ? cache.languages : [cache.locale];
       // Rebuild in the page realm: a content-side array is opaque to the page.
-      return makePageFn('json', 'return JSON.parse(json);')(JSON.stringify(langs));
+      return makePageFn('json', 'parse', 'return parse(json);')(JSON.stringify(langs), pageJSONParse);
     }, rawWin);
-    const getter = makePageFn('impl',
-      'const fn = function () { return impl.apply(this, arguments); };' +
+    const getter = makePageFn('impl', 'invoke',
+      'const fn = function () { return invoke(impl, this, arguments); };' +
       'Object.defineProperty(fn, "name", { value: "get language", configurable: true });' +
-      'return fn;')(getImpl);
-    const langsGetter = makePageFn('impl',
-      'const fn = function () { return impl.apply(this, arguments); };' +
+      'return fn;')(getImpl, pageInvoke);
+    const langsGetter = makePageFn('impl', 'invoke',
+      'const fn = function () { return invoke(impl, this, arguments); };' +
       'Object.defineProperty(fn, "name", { value: "get languages", configurable: true });' +
-      'return fn;')(langsImpl);
+      'return fn;')(langsImpl, pageInvoke);
     installGetterSlot(rawNavProto, 'language', getter, navLangDesc);
     installGetterSlot(rawNavProto, 'languages', langsGetter, navLangsDesc);
   }
@@ -761,18 +843,18 @@
   // method (Xray denies it); instead the page-realm trampoline receives the
   // descriptor as JSON and rebuilds a real page-realm object.
   const nativeQueryTramp = (realPermQuery && realPermissions)
-    ? makePageFn('realQuery', 'perms',
-      'return function (descJson) { return realQuery.call(perms, JSON.parse(descJson)); };'
-    )(realPermQuery, realPermissions)
+    ? makePageFn('realQuery', 'perms', 'invoke', 'parse',
+      'return function (descJson) { return invoke(realQuery, perms, [parse(descJson)]); };'
+    )(realPermQuery, realPermissions, pageInvoke, pageJSONParse)
     : null;
   const nativeQueryNoArgs = (realPermQuery && realPermissions)
-    ? makePageFn('realQuery', 'perms',
-      'return function () { return realQuery.call(perms); };'
-    )(realPermQuery, realPermissions)
+    ? makePageFn('realQuery', 'perms', 'invoke',
+      'return function () { return invoke(realQuery, perms, []); };'
+    )(realPermQuery, realPermissions, pageInvoke)
     : null;
 
   function buildPermissionStatus() {
-    if (!permProto || typeof rawWin.EventTarget !== 'function') {
+    if (!permProto || typeof pageEventTargetCtor !== 'function') {
       return makePageFn(
         'const o = { state: "granted", onchange: null };' +
         'try { Object.defineProperty(o, Symbol.toStringTag, { value: "PermissionStatus" }); } catch (e) {}' +
@@ -789,7 +871,7 @@
       'var s = new EventTargetCtor();' +
       'Object.setPrototypeOf(s, proto);' +
       'return s;'
-    )(permProto, rawWin.EventTarget);
+    )(permProto, pageEventTargetCtor);
     const key = permStatusKey(s);
     if (!key) {
       // Cannot table-register this instance: explicitly fall back to the
@@ -838,7 +920,7 @@
           // safety timeout flushes) — never via an immediate microtask.
           return new window.Promise((resolve) => { permQueryers.push({ resolve }); });
         }
-        if (geoActive()) return rawWin.Promise.resolve(buildPermissionStatus());
+        if (geoActive()) return pagePromiseResolve.call(pagePromiseCtor, buildPermissionStatus());
         return nativeQueryTramp(JSON.stringify({ name: 'geolocation' }));
       }
       if (desc === undefined) return nativeQueryNoArgs();
@@ -942,7 +1024,7 @@
       const convert = exportFunction(function (value) {
         return maskedFont(value);
       }, rawWin);
-      return makePageFn('convert',
+      return makePageFn('convert', 'invoke',
         'var el = document.documentElement;' +
         'var npo = el && Object.getPrototypeOf(el.style);' +
         'if (!npo) return { font: false, fontFamily: false };' +
@@ -950,7 +1032,7 @@
         '  var d = Object.getOwnPropertyDescriptor(npo, prop);' +
         '  if (!d || typeof d.get !== "function" || typeof d.set !== "function") return false;' +
         '  var origGet = d.get, origSet = d.set;' +
-        '  var handler = function (target, value) { return origSet.call(target, convert(value)); };' +
+        '  var handler = function (target, value) { return invoke(origSet, target, [convert(value)]); };' +
         '  var fn = function (value) { return handler(this, value); };' +
         '  try { Object.defineProperty(fn, "name", { value: "set " + prop, configurable: true }); } catch (e) {}' +
         '  try {' +
@@ -961,7 +1043,7 @@
         '  } catch (e) { return false; }' +
         '}' +
         'return { font: install("font"), fontFamily: install("fontFamily") };'
-      )(convert);
+      )(convert, pageInvoke);
     } catch (_) {
       return { font: false, fontFamily: false };
     }
@@ -982,10 +1064,10 @@
       const impl = exportFunction(function (value) {
         return Reflect.apply(realSet, this, [maskedFont(value)]);
       }, rawWin);
-      const setter = makePageFn('impl',
-        `const fn = function (value) { return impl.apply(this, arguments); };` +
+      const setter = makePageFn('impl', 'invoke',
+        `const fn = function (value) { return invoke(impl, this, arguments); };` +
         `Object.defineProperty(fn, "name", { value: "set ${prop}", configurable: true });` +
-        'return fn;')(impl);
+        'return fn;')(impl, pageInvoke);
       try {
         Object.defineProperty(proto, prop, Object.assign({}, desc, { set: setter }));
       } catch (_) {}
@@ -1033,8 +1115,10 @@
   // bootstrap profile. Storage updates mutate the closure only.
   applyTimezoneOffset();
   applyIntlDateTimeFormat();
-  applyLocaleCtor(realNumFmt, 'NumberFormat', origIntlDescs.NumberFormat);
-  applyLocaleCtor(realCol, 'Collator', origIntlDescs.Collator);
+  applyLocaleCtor(realNumFmt, 'NumberFormat', origIntlDescs.NumberFormat,
+    (typeof realNumFmt.supportedLocalesOf === 'function') ? realNumFmt.supportedLocalesOf : null);
+  applyLocaleCtor(realCol, 'Collator', origIntlDescs.Collator,
+    (typeof realCol.supportedLocalesOf === 'function') ? realCol.supportedLocalesOf : null);
   applyNavigatorLanguage();
   applyGeolocation();
   applyPermissions();

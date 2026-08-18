@@ -379,3 +379,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true; // keep channel open for async sendResponse
 });
+
+// T2-cross-realm: push profile updates to every content-script frame.
+// Subframe content scripts cannot read chrome.storage on Firefox 153
+// (measured: "An unexpected error occurred", initial get AND onChanged both
+// dead), so storage changes are broadcast over the runtime channel. The
+// page (MAIN world) cannot send or receive these messages — no page-visible
+// channel is created.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!(changes.override || changes.settings)) return;
+  chrome.storage.local.get(['override', 'settings'], (data) => {
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of tabs || []) {
+        try {
+          chrome.tabs.sendMessage(t.id, { type: 'geomirror-profile-update', data });
+        } catch (_) {}
+      }
+    });
+  });
+});

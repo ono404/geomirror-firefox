@@ -626,6 +626,19 @@ test('STRUCTURAL: the pending geolocation permission promise never settles via a
     'pending permission must create a page-realm promise (via the Xray window) whose executor queues the resolver');
 });
 
+test('STRUCTURAL: the permission-query resolution uses the CAPTURED pristine Promise.resolve member, never a call-time member lookup', () => {
+  const src = readFile('content-isolated.js');
+  // T2A fix: pagePromiseCtor.resolve would resolve through the page's own
+  // member at call time (page-replaceable); the resolve FUNCTION is captured
+  // at document_start and invoked with the captured constructor as `this`.
+  assert(/const pagePromiseResolve = rawWin\.Promise\.resolve;/.test(src),
+    'the pristine Promise.resolve member must be captured at document_start');
+  assert(/pagePromiseResolve\.call\(pagePromiseCtor, buildPermissionStatus\(\)\)/.test(src),
+    'the ready permission path must resolve through the captured member with the captured constructor as receiver');
+  assert(!/pagePromiseCtor\.resolve\(buildPermissionStatus\(\)\)/.test(src),
+    'no call-time member lookup may resolve the permission query');
+});
+
 test('STRUCTURAL: non-geolocation permissions keep the native delegation path', () => {
   const src = readFile('content-isolated.js');
   assert(/nativeQueryTramp\(json\)/.test(src), 'non-geolocation descriptors must delegate via the native trampoline');
@@ -863,7 +876,10 @@ function loadBackgroundSandbox() {
       onMessage: { addListener() {} },
     },
     alarms: { onAlarm: { addListener() {} } },
-    storage: { local: { get: async () => ({}), set: async () => {} } },
+    storage: {
+      local: { get: async () => ({}), set: async () => {} },
+      onChanged: { addListener() {} },
+    },
     declarativeNetRequest: {
       updateDynamicRules: async () => {},
       getDynamicRules: async () => [],
@@ -1026,9 +1042,44 @@ test('content-isolated.js NPO hook exposes no mask implementation source to the 
   // The setter the page can read is exactly a neutral delegation shim.
   assert(hook.includes('var fn = function (value) { return handler(this, value); };'),
     'the page-visible setter must be a neutral handler delegation');
-  assert(hook.includes('var handler = function (target, value) { return origSet.call(target, convert(value)); };'),
+  // T-FINAL (final-callable-closure): the handler must reach the content-side
+  // conversion through the captured pristine isolated-side invoke closure —
+  // a member-lookup `origSet.call(...)` is interceptable by a page that
+  // replaces Function.prototype.call (proven, evidence final-callable-closure).
+  assert(hook.includes('var handler = function (target, value) { return invoke(origSet, target, [convert(value)]); };'),
     'the content-side conversion must be reached through a closure-only handler');
+  assert(!hook.includes('.call(') && !hook.includes('.apply('),
+    'NPO hook page template must not perform member-lookup .call/.apply (page-interceptable)');
   assert(!hook.includes('String(value)'), 'no coercion/mask logic may appear in the page template');
+});
+
+test('T-FINAL: page-realm wrapper templates perform no interceptable member/global lookup', () => {
+  const src = readFile('content-isolated.js');
+  // T-FINAL (final-callable-closure) invariants: the page-realm wrapper
+  // bodies must never resolve `.call` / `.apply` / `JSON.parse` / `Reflect`
+  // at call time — a page replacing Function.prototype.call/apply or
+  // window.JSON.parse intercepts those lookups and controls the wrapper's
+  // return value (proven on real Firefox; evidence final-callable-closure).
+  assert(src.includes('const pageInvoke = exportFunction'), 'pristine isolated-side invoke helper must be captured');
+  assert(src.includes('const pageJSONParse = rawWin.JSON.parse'), 'pristine page JSON.parse must be captured');
+  // Every page-realm wrapper template (makePageFn body) must route inner
+  // invocation through the invoke closure / parse parameter.
+  const parts = src.split('makePageFn(').slice(1);
+  assert(parts.length >= 8, 'expected at least 8 makePageFn wrapper builders');
+  for (const p of parts) {
+    // The wrapper template is the string-literal argument list; everything
+    // after the closing `)(` is the caller's isolated-side code (which may
+    // legitimately use Xray-protected .call / pristine Reflect.apply).
+    const end = p.indexOf(')(');
+    const snippet = end === -1 ? p.slice(0, 900) : p.slice(0, end);
+    if (!snippet.includes('return fn;') && !snippet.includes('return function')) continue;
+    assert(!snippet.includes('.call(') && !snippet.includes('.apply('),
+      'wrapper template must not use member .call/.apply: ' + snippet.slice(0, 100));
+    assert(!/JSON\.parse\(/.test(snippet) && !/Reflect\.apply\(/.test(snippet),
+      'wrapper template must not use page-global JSON.parse/Reflect.apply: ' + snippet.slice(0, 100));
+  }
+  // Isolated-side exportFunction bodies may keep Xray-protected .call and
+  // pristine Reflect.apply — that side is safe (Q2 evidence).
 });
 
 test('F011 regression tests remain present in the suite', () => {

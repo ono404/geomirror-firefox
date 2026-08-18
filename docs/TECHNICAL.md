@@ -16,6 +16,22 @@ The extension currently spoofs:
 - outgoing `Accept-Language` header via Chrome `declarativeNetRequest`
 - Chinese system/vendor font availability for non-Chinese exit profiles
 
+## Acceptance state (2026-08-18)
+
+The accepted `1.2.5` product source baseline is `c8d9d6a` in open PR #6;
+subsequent commits through `1e0d4ce` are documentation-only closeout. Its
+Firefox CI passed. The final verdict is PRODUCT ACCEPT with the documented
+Firefox platform limitations and EVIDENCE ACCEPT. The evidence authority is
+`../evidence/firefox-security-1.2.5/final-callable-closure-v4/`, supplemented
+by `../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`:
+single frozen batch b1, run-local source and harness snapshots, strict
+asynchronous permission-path semantics, and an independent clean attack audit
+with 97/97 PASS, 0 FAIL, and 0 path pollution. This supersedes the 2026-08-16
+`final-governance-closeout` EVIDENCE REJECT, which remains a historical record
+of the weaker evidence chain. The candidate is not yet merged, signed,
+published, or installed. The last formal release is `1.2.4`; remaining steps
+are authorized merge → Mozilla signing → permanent-install verification.
+
 ## Runtime flow
 
 1. `background.js` detects the visible exit IP location using multiple IP providers.
@@ -56,6 +72,72 @@ neutral `Etc/UTC` / `en-US` bootstrap. Chrome / Edge replace it when the bridge
 payload arrives; Firefox replaces it when `chrome.storage.local` resolves in
 the isolated runtime. This prevents an initial host-region leak while keeping
 the asynchronous bootstrap transition explicit.
+
+### Firefox subframe profile delivery (1.2.5)
+
+Measured on Firefox 153: `chrome.storage` in SUBFRAME content scripts fails
+with "An unexpected error occurred" — both the initial `local.get` and
+`storage.onChanged` are dead there — so a subframe wrapper would otherwise
+stay on the neutral bootstrap while the top page shows the target profile.
+`content-isolated.js` therefore ALSO requests the profile over the
+content-script → background runtime channel (`runtime.sendMessage` works in
+every frame class, measured), and `background.js` broadcasts storage changes
+to every frame over the same channel. The page (MAIN world) can neither send
+nor receive these messages — no page-visible channel is created. The Firefox
+content script also declares `match_about_blank` + `match_origin_as_fallback`
+so about:blank / srcdoc / blob: / data: subframes (and same-origin popups)
+receive the same isolated wrapper instead of leaking the real host region.
+Platform limits remain: workers and top-level `data:` documents cannot carry
+content scripts at all (classified C, see BLOCKED.md). Measured refinement
+(2026-08-14, independent acceptance): Firefox 153 BLOCKS top-level `data:`
+navigation entirely — `window.open('data:…')` returns a handle but the popup
+stays `about:blank` (href readable as `about:`), so a top-level `data:`
+document never even exists in practice; the C-class record for that realm is
+the explicit platform block, never a vacuous `about:blank` reading.
+
+### Callable trust boundary (1.2.5)
+
+All call-time page-realm construction goes through pristine page callables
+captured once at `document_start`, before any page script can replace them:
+`rawWin.Function` (page functions built by `makePageFn`), `rawWin.Promise`
+(permission-query resolution), `rawWin.EventTarget` (permission-status
+construction), and — T2A fix — the `Promise.resolve` MEMBER itself.
+Capturing only the constructor is insufficient: `pagePromiseCtor.resolve` is
+a member lookup at call time on the page's own Promise object, so a page
+replacing `Promise.resolve` after load intercepts the extension's
+permission-query resolution and controls its return value (proven with a
+marker-mode probe; evidence `../evidence/firefox-security-1.2.5/
+independent-acceptance-v2/T2A-promise-member-v2/`). The captured member is
+invoked as `pagePromiseResolve.call(pagePromiseCtor, value)` to preserve the
+native `NewPromiseCapability(this)` semantics. The pending-query path
+(`new window.Promise(executor)` before the storage profile arrives) is
+measured NOT page-interceptable on Firefox 153: the Xray `window.Promise`
+resolves to the page intrinsic, and a page-replaced constructor is never
+invoked (negative evidence in the same round set).
+
+#### Wrapper call-time lookup closure (1.2.5 T-FINAL, `final-callable-closure`)
+
+Page-realm wrapper bodies (functions built by `makePageFn`) must never resolve
+`.call` / `.apply` / `JSON.parse` / `Reflect.apply` through member or global
+lookup at call time. A page that replaces `Function.prototype.call/apply` or
+`window.JSON.parse` after load intercepts those lookups and controls the
+wrapper's return value — measured on real Firefox 153.0.4 with a hostile page:
+`navigator.language`/`navigator.languages` returned `undefined`,
+`Intl.DateTimeFormat.supportedLocalesOf` returned `undefined`, and
+`new Intl.DateTimeFormat()` constructed an instance whose methods all threw
+`TypeError` (evidence `../evidence/firefox-security-1.2.5/
+final-callable-closure/`, Q2/Q3 + hostile matrix). Two pristine callables are
+captured once at `document_start` and passed into wrapper closures as plain
+parameters: `pageJSONParse` (the pristine page-realm `JSON.parse`, invoked
+directly) and `pageInvoke` — an exported isolated-side helper
+`(fn, self, args) => Reflect.apply(fn, self, args)` that performs the inner
+invocation with the pristine isolated `Reflect.apply`. Direct call, no member
+lookup, no page-global lookup: the page can neither observe nor divert the
+wrapper's inner call. The `supportedLocalesOf` members are likewise captured
+at `document_start` (`realDTF.supportedLocalesOf`, `realNumFmt.supportedLocalesOf`,
+`realCol.supportedLocalesOf`) so the page cannot swap them at call time either.
+Isolated-side (`exportFunction` body) `.call`/`Reflect.apply` usage is
+unaffected: the Xray view protects `.call` there (Q2 evidence).
 
 The provider chain also continues past a valid location-only response until it
 finds a provider with an IANA timezone. If every timezone-capable provider
@@ -111,6 +193,12 @@ cannot silently drop one family. The mask automatically stays inactive for
 - JavaScript wrapper source/stack differences remain generically observable.
 - In Firefox, spoofed Geolocation objects cannot reproduce the native
   `structuredClone` WebIDL internal-slot failure without a new, broader patch.
+- Firefox platform limits (measured 2026-08-14, classified C, recorded in the
+  frozen T2 matrix judge): page-created Dedicated/Shared workers always read
+  the real host timezone/language (Firefox has no worker content scripts), and
+  top-level `data:` documents (opaque origin) always read the real host. A
+  page can therefore still recover host values through these realms; no
+  manifest/content-script mechanism covers them.
 - A browser extension cannot change the timezone seen by native programs such
   as Claude Code; it changes web-page JavaScript surfaces only.
 
