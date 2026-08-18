@@ -1,9 +1,10 @@
 # Firefox maintenance and release handoff
 
-## Current source state — 2026-08-16 (1.2.5 PR candidate, NOT signed)
+## Current source state — 2026-08-18 (1.2.5 PR candidate, NOT signed)
 
 - Authoritative Firefox source branch: `main` in `ono404/geomirror-firefox`.
-- **Source version `1.2.5` (commit `7c97f22`, PR #6, Firefox CI passed; not yet merged,
+- **Source version `1.2.5` (accepted product baseline `c8d9d6a`; subsequent commits through
+  `1e0d4ce` are documentation-only closeout; open PR #6, Firefox CI passed; not yet merged,
   signed, published, or installed)** carries
   four accepted fix sets: the page-realm callable trust boundary (T1), the cross-realm
   consistency fixes (T2), the captured-`Promise.resolve`-member fix (T2A, closes the
@@ -16,14 +17,15 @@
   `../evidence/firefox-security-1.2.5/final-callable-closure/`), each proven
   RED→GREEN→RED on frozen real-Firefox judges (evidence `../evidence/firefox-security-1.2.5/`).
   The last signed/installed version remains `1.2.4`.
-- **Final acceptance state (2026-08-16, `final-governance-closeout/`)**: PRODUCT ACCEPT;
-  EVIDENCE CRYPTOGRAPHIC AUTHENTICITY REJECT (the v3 judges verify in-directory internal
-  consistency only — the attack review showed complete self-consistent forgeries pass them;
-  the independent manager anchor detects post-anchor changes but cannot prove pre-anchor
-  history); OPERATIONAL RELEASE READINESS ACCEPT under the stated operational trust model
-  (`SECURITY_MODEL.md`). The earlier v2 "EVIDENCE ACCEPT" was revoked by the v3 report.
-  Remaining steps: authorized merge → Mozilla signing → permanent-install verification.
-  Each release step is a separate authorization.
+- **Final acceptance state (2026-08-18)**: PRODUCT ACCEPT with the documented Firefox
+  platform limitations, and EVIDENCE ACCEPT. The authority is
+  `final-callable-closure-v4/REPORT-v4.md` plus the independent
+  `final-callable-closure-v4-clean-audit/CLEAN-AUDIT-REPORT.md`: frozen batch b1,
+  asynchronous permission-path enforcement, and 97/97 clean attacks PASS with 0 FAIL and
+  0 path pollution. This supersedes the 2026-08-16 `final-governance-closeout` evidence
+  rejection, which remains a historical record of the weaker chain. Remaining steps:
+  authorized merge → Mozilla signing → permanent-install verification. Each release step
+  is a separate authorization.
 - Source version `1.2.4` contains the accepted DNR failure/coherence fix and local main-push mitigation. PR #4 merged the maintenance candidate to `main` at `24bde6078fd9aecf550dfae0b82a8a85b5ae28c6`; its pull-request and merged-main Firefox CI runs passed.
 - PR #1 merged the accepted isolated-runtime history at `0657406c1c9f1a8e85111e4a4c1d0cecd678207a` without squashing.
 - The implementation acceptance commit `95486617d7c9fd3fc4beb9dd41c517b815bece62` is contained in `main`; `agent/firefox-isolated-runtime` is a completed historical branch.

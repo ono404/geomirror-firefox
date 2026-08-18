@@ -16,21 +16,21 @@ The extension currently spoofs:
 - outgoing `Accept-Language` header via Chrome `declarativeNetRequest`
 - Chinese system/vendor font availability for non-Chinese exit profiles
 
-## Acceptance state (2026-08-16)
+## Acceptance state (2026-08-18)
 
-The local `1.2.5` source carries three-axis verdicts (full text:
-`../evidence/firefox-security-1.2.5/final-governance-closeout/`): PRODUCT
-ACCEPT (fix behavior confirmed by two independent fresh-Firefox runs against
-frozen judges); EVIDENCE CRYPTOGRAPHIC AUTHENTICITY REJECT — the in-directory
-evidence chain cannot prove its own history to a distrusting verifier (the v3
-judges check internal consistency only; complete self-consistent forgeries
-were accepted in the attack review; the independent manager anchor detects
-changes made after it was established, nothing before); OPERATIONAL RELEASE
-READINESS ACCEPT under the stated operational trust model. The `1.2.5` source
-candidate is commit `7c97f22` in PR #6, whose Firefox CI passed; it is not yet
-merged, signed, published, or installed. The last formal release is `1.2.4`.
-The remaining release steps are authorized merge → Mozilla signing →
-permanent-install verification.
+The accepted `1.2.5` product source baseline is `c8d9d6a` in open PR #6;
+subsequent commits through `1e0d4ce` are documentation-only closeout. Its
+Firefox CI passed. The final verdict is PRODUCT ACCEPT with the documented
+Firefox platform limitations and EVIDENCE ACCEPT. The evidence authority is
+`../evidence/firefox-security-1.2.5/final-callable-closure-v4/`, supplemented
+by `../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`:
+single frozen batch b1, run-local source and harness snapshots, strict
+asynchronous permission-path semantics, and an independent clean attack audit
+with 97/97 PASS, 0 FAIL, and 0 path pollution. This supersedes the 2026-08-16
+`final-governance-closeout` EVIDENCE REJECT, which remains a historical record
+of the weaker evidence chain. The candidate is not yet merged, signed,
+published, or installed. The last formal release is `1.2.4`; remaining steps
+are authorized merge → Mozilla signing → permanent-install verification.
 
 ## Runtime flow
 

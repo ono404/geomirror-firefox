@@ -4,6 +4,14 @@
 
 - None.
 
+## Current acceptance and release state (2026-08-18)
+
+- **PRODUCT: ACCEPT WITH PLATFORM LIMITATIONS.** The frozen Firefox 153.0.4 runs and functional matrix passed; no new product repair was required in v4.
+- **EVIDENCE: ACCEPT.** The current authority is `final-callable-closure-v4/REPORT-v4.md` plus the independent clean audit: 97/97 PASS, 0 FAIL, 0 path pollution.
+- Accepted product source baseline `1.2.5` is `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969` in open PR #6; subsequent commits through the pre-neat-freak head `1e0d4ce6e9f300933bed23fe4d865b64c0b437d9` are documentation-only closeout. Its Firefox CI completed successfully.
+- **No product blocker. Release authorization is still pending:** PR #6 is not merged, and `1.2.5` is not Mozilla-signed, published, or permanently installed. The last signed/installed release remains `1.2.4`.
+- The 2026-08-16 `final-governance-closeout` EVIDENCE REJECT below is historical and superseded by the v4 frozen evidence plus clean audit; it is retained for auditability, not as the current verdict.
+
 ## final-callable-closure round (2026-08-16) — no product blockers; harness limitations recorded
 
 - **No product blockers.** The T-FINAL fix (wrapper call-time lookup closure)
@@ -24,7 +32,7 @@
   3. `http://127.0.0.1:<port>/*` content-script match patterns do not match in
      Firefox (port-in-host); harness uses `<all_urls>` — see PROGRESS.md.
 
-## Current acceptance state (2026-08-16, final-governance-closeout)
+## Historical acceptance state (2026-08-16, final-governance-closeout; superseded)
 
 - Three-axis verdict (full text: `../evidence/firefox-security-1.2.5/final-governance-closeout/FINAL_REPORT.md`, trust model: `SECURITY_MODEL.md`):
   - **PRODUCT: ACCEPT** — the 1.2.5 fixes behave per frozen semantics, confirmed by two independent fresh-Firefox runs (original v3 run + manager-review-v3-ai2 rerun), 90 tests/0 skipped, build 17, lint 0/0/0.
@@ -55,7 +63,7 @@
 
 - Firefox `1.2.4` is the last signed release. The canonical XPI is `web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi`, SHA-256 `d3c822d0607c0379bb6e56ef4456ce4091aa6f67215aee8b68beb9636e057208`.
 - The package was Mozilla-signed through the unlisted channel and independently verified in the permanent Firefox profile on 2026-08-14: version `1.2.4`, active/enabled/compatible, `signedState=2`, and installed-XPI hash equal to the canonical artifact. Source, merge, signature, and installation remain separate states for future releases.
-- **Source candidate state:** version `1.2.5` in both manifests is committed on the release branch and under review in PR #6 (Firefox CI passed), but is NOT merged, signed, published, or installed. It carries the T1 page-realm callable-trust fixes, the T2 cross-realm fixes, and the T2A captured-`Promise.resolve`-member fix (the member capture closes the call-time member-lookup crossing left by the T1 constructor capture; pending-path constructor is measured not page-interceptable). The signed/installed version remains `1.2.4` until an explicitly authorized merge and release/signing cycle.
+- **Source candidate state:** version `1.2.5` in both manifests has accepted product baseline `c8d9d6a` on the release branch in open PR #6 (Firefox CI passed); later commits are documentation-only closeout. It is NOT merged, signed, published, or installed. It carries the T1 page-realm callable-trust fixes, the T2 cross-realm fixes, the T2A captured-`Promise.resolve`-member fix, and the T-FINAL wrapper call-time lookup closure. The signed/installed version remains `1.2.4` until an explicitly authorized merge and release/signing cycle.
 
 ## Platform limitations (T2-cross-realm, measured 2026-08-14, Firefox 153.0.4)
 

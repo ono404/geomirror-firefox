@@ -1,5 +1,13 @@
 # GeoMirror Firefox current status
 
+## 当前权威状态（2026-08-18，neat-freak 知识收口）
+
+- 源码候选版本 `1.2.5`，已验收产品源码基线 `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`；分支 `agent/release-firefox-1.2.5` 在 neat-freak 前的远端 head 为文档收口提交 `1e0d4ce6e9f300933bed23fe4d865b64c0b437d9`。开放 PR #6 的 Firefox CI `completed/success`；本轮只会以文档提交继续推进 head，不改变产品树。
+- 最终裁决：**PRODUCT ACCEPT WITH PLATFORM LIMITATIONS**；**EVIDENCE ACCEPT**。现役证据为 `final-callable-closure-v4/REPORT-v4.md` 与 `final-callable-closure-v4-clean-audit/CLEAN-AUDIT-REPORT.md`；clean audit 97/97 PASS、0 FAIL、0 路径污染。
+- 产品源码在 v4/clean-audit 阶段 diff=0；本轮 neat-freak 只同步 README、技术说明、交接与状态文档，不改变扩展行为。
+- 发布状态严格分离：候选源码已推送且 PR/CI 通过，但**尚未 merge、Mozilla 签名、发布或永久安装**；最后已签名/已安装版本仍为 `1.2.4`。
+- 下文 2026-08-16 的 `final-governance-closeout` EVIDENCE REJECT 是旧证据链的历史裁决，已被 2026-08-18 的冻结 b1、异步语义裁决与独立 clean audit 取代，不再是当前结论。
+
 ## 本轮：1.2.5 最终安全收口核实（final-callable-closure，2026-08-16 开工回执）
 
 - 目标：关闭剩余的 raw-page callable 信任问题——(a) 页面提前 poisoning 后 Xray `window.Function` vs `rawWin.Function` 的真实语义；(b) call-time `.call/.apply/member` lookup 是否可被页面截获；(c) makePageFn wrapper 内 impl/realQuery/JSON.parse/supportedLocalesOf 的 realm 归属；(d) about:blank pre-injection 时序窗口，分别裁决后做最小修复。
@@ -56,7 +64,7 @@
 - 修复—验收循环：1 轮闭环（未到 3 轮上限）。
 
 
-## 最终治理收口（2026-08-16，final-governance-closeout，当前有效口径）
+## 历史治理收口（2026-08-16，final-governance-closeout；已被 2026-08-18 最终裁决取代）
 
 - **三轴裁决**：PRODUCT **ACCEPT**（修复行为真实有效）；EVIDENCE CRYPTOGRAPHIC AUTHENTICITY **REJECT**（证据目录不能密码学自证历史）；OPERATIONAL RELEASE READINESS **ACCEPT**（可信独立执行者 + 管理锚防锚后改动的运营模型下）。
 - **当前发布状态**：修复阶段已结束，1.2.5 源码提交 `7c97f22` 已推送到 `agent/release-firefox-1.2.5` 并进入 PR #6，Firefox CI 已通过。尚未授权合并、Mozilla 签名、发布或永久安装；最后正式版仍是 1.2.4。

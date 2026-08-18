@@ -182,20 +182,21 @@ GitHub source updates still do not update an installed XPI automatically.
 
 The repository source candidate is currently at **version `1.2.5`** (page-realm
 callable trust boundary + captured-`Promise.resolve`-member fix + cross-realm
-consistency fixes). Commit `7c97f22` is under review in PR #6 and its Firefox
-CI passed. It has not been merged, signed, published, or installed; the last
+consistency fixes). Accepted product source baseline `c8d9d6a` is in open PR #6;
+later commits through `1e0d4ce` are documentation-only closeout, and the PR's
+Firefox CI passed. It has not been merged, signed, published, or installed; the last
 signed/installed version remains `1.2.4`. Merge, signing, and installation are
 separate, explicitly authorized release steps.
 
-Acceptance state of the `1.2.5` source candidate (2026-08-16, full text under
-`../evidence/firefox-security-1.2.5/final-governance-closeout/`): the product
-fixes are ACCEPTED (two independent fresh-Firefox runs against frozen judges);
-the evidence directories are NOT cryptographically self-proving (attack review
-REJECT: complete self-consistent forgeries pass the in-directory judges, which
-verify internal consistency only — tampering after the independent manager
-anchor is detectable, history before it is not); operational release readiness
-is ACCEPTED under that stated trust model. The remaining release steps are:
-authorized merge → Mozilla signing → permanent-install verification.
+Final acceptance state of the `1.2.5` source candidate (2026-08-18; full text
+under `../evidence/firefox-security-1.2.5/final-callable-closure-v4/` and
+`../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`):
+PRODUCT ACCEPT with the documented Firefox platform limitations, and EVIDENCE
+ACCEPT. The frozen batch-b1 runs, asynchronous permission-path checks, and an
+independent clean attack audit (97/97 PASS, 0 FAIL, 0 path pollution) supersede
+the earlier `final-governance-closeout` evidence rejection, which remains
+historical evidence rather than the current verdict. The remaining release
+steps are: authorized merge → Mozilla signing → permanent-install verification.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 
