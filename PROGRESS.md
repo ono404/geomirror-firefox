@@ -467,3 +467,84 @@
 ## Verification entry point
 
 Run the complete command set in `AGENTS.md`. Firefox runtime acceptance must use ordinary-page and server-side evidence with extension-off/on controls; static tests alone are insufficient.
+
+---
+
+## final-callable-closure-v2 执行轮（2026-08-18，执行者：v2 round executor）
+
+### 任务0 基线（实测通过，全部命令见对话记录）
+
+- git status：clean；branch `agent/release-firefox-1.2.5`；HEAD `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`（任务书要求 c8d9d6a ✓）
+- `content-isolated.js` SHA256 `80bc3757efa0b0e6f8aa17bf3176e9a1fcdd595c954e10dd14332e97b7803278` ✓（任务书要求 80BC…3278）
+- `node test/run-tests.js`：**91 passed / 0 skipped**，exit 0 ✓
+- `node test/inject-smoke.js`：PASS，exit 0 ✓
+- `node tools/build-firefox.mjs`：17 files，exit 0 ✓
+- `web-ext.cmd lint --source-dir dist/firefox`：errors 0 / notices 0 / warnings 0，exit 0 ✓
+- `git diff --check`：clean，exit 0 ✓
+- Firefox 153.0.4（`C:\Program Files\Mozilla Firefox\firefox.exe`）✓
+- 旧证据只读：`D:\LAB\火狐浏览器插件制作\evidence\firefox-security-1.2.5\final-callable-closure\`（REPORT.md 裁决 Q1-Q4；hostile-run / matrix-run 无 environment.json）
+- 旧 harness 实际可运行命令（已核实源码，未空转）：`python driver.py --rounds N [--only globals|protos|blank]`（fresh profile、RDP 19072、probe server 19071、gate 导航）、`node rdp-install.js <port> <addonDir>`（classic RDP length-prefixed JSON）。旧 Q4 probe-blank 顺序 `append → firstRead → poison`，**不满足 Phase B，弃用**。
+
+### v2 目标（10 行内）
+
+1. **目标**：真正验证 about:blank/子帧注入前 poisoning——A(appendChild 后第一条同步操作即 poison)、B(contentDocument.open/write/close 内首个 inline script poison)、C(srcdoc 首个 inline script poison) 各 3 轮 fresh profile；判定页面先 poison 时 GeoMirror 捕获的是否为 trap（Function/Promise/EventTarget/Function.prototype.call/apply/Reflect.apply/JSON.parse），trap 是否成为 trust root / 收到 host 数据 / 控制返回值。
+2. **顺序**：任务0 基线（已完成）→ 搭 v2 harness（driver/server/rdp-install/judge/attack-runner/diag-ext/probes，全部在 evidence v2 目录）→ phaseb-a×3 → phaseb-b×3 → phaseb-c×3 → 每轮 judge + 五类伪造攻击 fail-closed 验证 → 裁决（VALID → 任务2 最小修复 RED→GREEN→RED→GREEN；否则 ACCEPT WITH PLATFORM LIMITATION）→ matrix-current → 最终报告（PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）。
+3. **最大风险**：(a) 竞争时序逐轮抖动——每轮记录 iframe 创建/poison 开始完成/cs-arrival/捕获完成/首次读取/注入后读取的完整时间线，裁决以轮内时序为准；(b) trap 若破坏 GeoMirror 安装会退化为 DoS 而非"控制"——trap 返回功能兼容但带标记的受控对象，以 'CTRL:' 前缀与 fnUseCount 判控制；(c) 端口残留/残留 firefox 进程污染——每轮前 netstat + tasklist 校验；(d) 旧 harness 命令空转——不复用旧 rounds，全部新建。
+
+### Phase B 重做完成（2026-08-18，11 轮 + matrix-current，全部 judge exit 0）
+
+- **harness**（`evidence/firefox-security-1.2.5/final-callable-closure-v2/harness/`）：driver.py/server.py/rdp-install.js/judge.py/attack-runner.py/synth-check.py + diag-ext（生产 content-isolated.js + font-mask-isolated.js 副本 SHA 与 repo 一致、phaseb-diag.js 注入时刻 poison 探测、seed-bg.js Paris→Tokyo 种子）；poison-src.js 硬约束（无双引号、无 script 闭合序列）由 check-poison.mjs 每轮前置校验；合成自检（synth-check.py）先行通过（未篡改=0、五类攻击全部 fail-closed）。
+- **路径 A**（append 后第一条同步操作 eval poison）：r1/r2/r3 全 NEGATIVE——child cs-arrival 早于 poison-done ~5-6ms（content script 在 appendChild 同步过程中即注入），poisoned=False，trap 全 0（F/JP/PR/ET/call/apply/RA/fnUse），读取值正常 spoof（fr-FR/Europe/Paris/geo=pos）。
+- **路径 B**（open/write/close 首个 inline script poison）：r1（diag 辅助行偶发丢失但 trapDone+全0+值正常可裁决）/r2/r3/r4 全 NEGATIVE——cs-arrival 早于 trapDone ~6-7ms，trap 全 0。
+- **路径 C**（srcdoc 首个 inline script poison）：r1/r2/r3/r4 全 NEGATIVE——srcdoc 解析为异步导航，diag 注入（poisoned=False）先于 inline script（r4 完整时间线 cs-arrival < trapDone 5ms）；trap 全 0。
+- **裁决**：三条路径页面先 poison 均未抢到；GeoMirror 从未消费 trap、受控函数从未被调用、trap 未收到任何 host 数据（trapRec 空）、注入后读取全部正常 spoof → **ACCEPT WITH PLATFORM LIMITATION**（Firefox 153.0.4 平台事实：document_start content script 注入先于 about:blank append 同步块、doc.open() 新文档 parser、srcdoc 文档 parser；页面 poison 永远晚于捕获）。**无 VALID 软件问题 → 任务2 不触发（产品源码 diff=0）**。
+- **matrix-current**（当前源码功能矩阵）：lang=en-US/langs=['en-US','en']/tz=Asia/Tokyo/tzo=-540/numFmt=1,234.5/slo=['en-US']/perm=granted/watch wid=1→clear 后回调停（cbs=2）；host 值（本机 Asia/Shanghai/-480/zh-CN）零泄漏；1s-8s 全一致（seed 切换在导航前完成）。
+- **五类伪造攻击**（attack-runner，12 个 run 目录全量）：MISSING-ENV/FAKE-SHA/SOURCE-DIR/STAGE-MISMATCH/CROSS-ROUND 全部 fail-closed 且 kind 匹配；原件 post-attack 仍 exit 0。
+- **静态验收**：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、git diff --check clean（PROGRESS.md 追加 23 行，产品源码 0 改动）。
+- **最终交付**：REPORT-v2.md（`evidence/firefox-security-1.2.5/final-callable-closure-v2/REPORT-v2.md`，PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）；BLOCKED.md v2 节 = 无；未 commit/push（执行者交付本地证据，push 待管理者指令）；残留检查：端口 19071/19072 空闲、无测试 firefox 进程。
+
+---
+
+## final-callable-closure-v3 执行轮（2026-08-18，REVISE 后重做）
+
+### 独立验收问题修复（对照）
+- judge 现在独立重算并比对全部哈希（frozenShas/harnessShas/diagFiles/loadedSource ↔ run-local 副本 ↔ FROZEN-MANIFEST ↔ repo live-bind），不再只查字段存在。
+- 冻结契约 FROZEN-MANIFEST.json（batch b9，20 文件）；每轮 run 目录含完整 harness-snapshot/** + loaded-extension/** + artifact-manifest.json + environment.json（绝对路径与全量 SHA）；check-frozen 漂移即拒跑。
+- manifest 顺序 diag → font-mask → content-isolated → phaseb-after-prod.js（prod-ready 哨兵）；**事件序证明**：after-prod 置页面 `__pb_prodReady` 标志，poison 脚本记录 `prodReadyBefore`，judge 以 `prodReadyBefore===true` 为决定性时序检查（ms 时钟无法分离同 ms 的 prod/t0 时依然可证）。
+- judge 全语义裁决：spoof 值（fr-FR/Europe/Paris/geo=pos/numFmt）、trap 9 项全 0、无 CTRL、trapRec 空、无异常/TypeError/缺字段、时序链、matrix 分阶段语义（1s/3s=Paris、6s/8s=Tokyo）、watch clear 后回调不增、perm=granted、host 值零泄漏、probe 重生成比对。
+- REPORT-v3 如实区分正式轮（b9：9+1 全 judge exit 0）与 excluded（b1-b8 试跑/作废轮次全部归档并标注原因，未删除未补写）。
+
+### b9 正式结果（单一冻结批次）
+- A×3、B×3、C×3 + matrix-current 全部 judge exit 0；9 轮 prodReadyBefore=true、trap F/P/PR/ET/call/apply/RA/JP/fnUse 全 0、trapRec 空、读取全为正常 spoof 值。
+- B 路径 child 早期 fetch 被 doc.open() 打断的问题：diag/after-prod 投递改 keepalive+重试（b3 trial 验证修复）。
+- 暗测：10 个正式 run × 17/15 类（a1-a14、a11b）共 167 次攻击全部 fail-closed 且 kind 匹配；合成自检（stage-a/c/matrix 三套）先行通过；原件 post-attack 全 exit 0。
+- 静态验收：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff check clean；产品源码 diff=0。
+- 最终报告：evidence/firefox-security-1.2.5/final-callable-closure-v3/REPORT-v3.md（PRODUCT/EVIDENCE/PLATFORM LIMITATIONS 分开）。
+
+---
+
+## final-callable-closure-v4 执行轮（2026-08-18，异步权限路径验证）
+
+### 验收缺口修复（独立验收指出：18/18 读取点 permPending、perm 缺失）
+- probe readChild 异步化：geolocation + permissions.query **双回调状态计数**（非 Promise.all 信任根）+ 4s 有界定时器；两项均结算后才采集 trap 快照（九项计数/trapRec/prodReadyBefore/trapT0/trapDone）并上报；单上报守卫防重复行；超时行写 geoTimeout/permTimeout。
+- judge 强制：perm 必须存在且严格 =granted；permPending/permErr/permThrow/permTimeout/geoErr/geoThrow/geoTimeout 任一存在即 SAFETY-SEMANTICS；全行 CTRL 扫描；DUPLICATE-ROW（page 行重复即失败）；无 "when present" 式裁决。
+- synth-check 正常样本一律 perm=granted（禁止 permPending 合法化）；新增 10 类异步攻击（a15 删 perm / a16 pending / a17 rejected / a18 permErr / a19 permThrow / a20 permTimeout / a21 结算后 trap 注入 / a22 CTRL 注入异步字段 / a23a 重复行 / a23b 删异步快照字段）。
+- 开发合成自检（dev1 脚手架）全绿后冻结正式 batch b1；REPORT-v4 统一使用实际 batch 编号。
+
+### b1 正式结果（v4 唯一正式批次，全部 judge exit 0）
+- A×3、B×3、C×3 + matrix-current 共 10 轮；**18/18 读取点 perm=granted、0/18 permPending/permErr/permThrow/permTimeout、0/18 geo 异常/超时**；trap 九项全 0（异步双结算后快照）、trapRec 空、无 CTRL、prodReadyBefore 18/18 true；读取值全为正常 spoof。
+- matrix：1s/3s=fr-FR/Europe/Paris/-120、6s/8s=en-US/Asia/Tokyo/-540、perm=granted、watch clear 后 cbs 1→1。
+- 暗测：10 个正式 run × 27/19 类 = 259 次攻击全部 fail-closed 且 kind 匹配；合成自检（stage-a/c/matrix）先行全绿；原件 post-attack 全 exit 0。
+- 静态验收：91 tests/0 skipped、smoke PASS、build 17、lint 0/0/0、diff check clean；产品源码 diff=0。
+- 最终报告：evidence/firefox-security-1.2.5/final-callable-closure-v4/REPORT-v4.md。
+
+---
+
+## final-callable-closure-v4 clean audit（2026-08-18，独立验收后）
+
+- 独立验收确认 b1 正式 10 轮/18/18 perm=granted/0/18 pending/trap 结算后全 0/frozen 复算/diff=0 均通过；指出 attack-runner 副本路径污染（未重绑定 extensionDirAbs/sourceDirAbs/snapshotDirAbs → 副本天然触发 EXT-DIR/SOURCE-DIR/FAKE-SHA/ARTIFACT-MANIFEST），且 matrix 攻击数应为 16 类而非 19 类。
+- 新建独立验收工具目录 evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/（clean-attack-audit.py、audit-environment.json、attacks/ 97 份输出、full-clean-audit.log、CLEAN-AUDIT-REPORT.md）。工具为事后独立验收件，不属于 b1 冻结 harness；未修改 v4/FROZEN-MANIFEST/正式 run/产品源码。
+- clean audit 机制：每攻击前复制 run 到项目外临时目录 → 重绑定三个绝对路径到副本内部 → 重建 artifact-manifest → 冻结 judge 必须先过 clean baseline（exit 0 / failKinds=[]）→ 攻击 → 单故障隔离（a23a 同步补 access POST、a12 删行删 POST、a5 除外；统一重建 manifest；EXT-DIR/SOURCE-DIR[非a3]/ARTIFACT-MANIFEST 出现即 FAIL；完整 failKinds 落盘）。
+- 结果：代表性 A/B/C/matrix 各一轮 × 27/27/27/16 = **97/97 PASS、0 FAIL、0 污染**；原件 post-attack re-judge 全 exit 0。
+- REPORT-v4.md 已更正：matrix 16 类；4.1 如实说明原 attack-runner 污染（不再称为完全隔离暗测）；4.2 单独列出 clean audit 逐项（clean baseline exit / attack exit / 精确 failKinds / pollution）；EVIDENCE=ACCEPT（clean audit 全过后），PRODUCT 保持 ACCEPT WITH PLATFORM LIMITATIONS。
+- 未重跑 Firefox、未修改冻结 harness/正式 run/产品源码、未 commit/push。

@@ -137,3 +137,28 @@
   stays on the constructible contract + real-function judge + static behavior tests.
 
 These are release-state boundaries, not product defects. A source-branch push does not imply merge, signing, or publication.
+
+---
+
+## final-callable-closure-v2（2026-08-18）阻塞记录
+
+无。Phase B 重做 11 轮 + matrix-current 全部完成并裁决 ACCEPT WITH PLATFORM
+LIMITATION；任务2 未触发（产品源码 diff=0）；无无法裁决事项。
+
+---
+
+## final-callable-closure-v3（2026-08-18）阻塞记录
+
+无。v3 单一冻结批次 b9：A/B/C 各 3 个完整正式轮 + matrix-current 全部 judge exit 0，167 次暗测全部 fail-closed，事件序证明成立，产品源码 diff=0，无无法裁决事项。
+
+---
+
+## final-callable-closure-v4（2026-08-18）阻塞记录
+
+无。v4 唯一正式批次 b1：A/B/C 各 3 个完整正式轮 + matrix-current 全部 judge exit 0；18/18 读取点 perm=granted、0/18 pending/err/throw/timeout；trap 快照在异步双结算后采集且全 0；259 次暗测全部 fail-closed；产品源码 diff=0，无无法裁决事项。
+
+---
+
+## final-callable-closure-v4 clean audit（2026-08-18）阻塞记录
+
+无。独立 clean audit 97/97 PASS、零污染；REPORT-v4 已如实修正；无阻塞事项。
