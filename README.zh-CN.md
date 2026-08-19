@@ -224,14 +224,12 @@ dist/firefox/manifest.json
 已经签名的 Firefox 安装包位于：
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.5.xpi
 ```
 
-已签名的 `1.2.4` 包包含 `main` 上已验收的 Firefox 源码以及 `Accept-Language` 失败/一致性修复。该包已通过 Mozilla unlisted 渠道签名，并在长期 Firefox profile 中完成安装核验。GitHub 源码更新仍不会自动更新已安装 XPI。
+已签名的 `1.2.5` 包包含合入 `main`（merge commit `aca0631d`）的已验收 Firefox 源码，包括 page-realm callable 信任边界、捕获的 `Promise.resolve` 成员、跨 realm 一致性以及最终 wrapper call-time lookup 修复。该包通过 Mozilla unlisted 渠道签名，并作为仓库规范制品发布；当前尚未在长期 Firefox profile 中完成安装核验。GitHub 源码更新仍不会自动更新已安装 XPI。
 
-仓库当前的**源码候选版本为 `1.2.5`**（page-realm callable 信任边界 + 捕获的 `Promise.resolve` 成员修复 + 跨 realm 一致性修复）。已验收产品源码基线为 `c8d9d6a`，位于开放 PR #6；其后的提交截至 `1e0d4ce` 只做文档收口，PR 的 Firefox CI 已通过。该候选尚未合并、签名、发布或安装。最后已签名/已安装的版本仍是 `1.2.4`，合并→签名→安装分别需要明确授权。
-
-`1.2.5` 源码候选的最终验收状态（2026-08-18，全文见 `../evidence/firefox-security-1.2.5/final-callable-closure-v4/` 与 `../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`）：**PRODUCT ACCEPT**（保留已记录的 Firefox 平台限制）且 **EVIDENCE ACCEPT**。冻结 batch b1、异步权限路径检查和独立 clean attack audit（97/97 PASS、0 FAIL、0 路径污染）取代了此前 `final-governance-closeout` 的证据拒绝；旧结论保留为历史证据，不再代表当前裁决。剩余发布步骤为：授权合并 → Mozilla 签名 → 永久安装核验。
+`1.2.5` 源码的最终验收状态（2026-08-18，全文见 `../evidence/firefox-security-1.2.5/final-callable-closure-v4/` 与 `../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`）：**PRODUCT ACCEPT**（保留已记录的 Firefox 平台限制）且 **EVIDENCE ACCEPT**。冻结 batch b1、异步权限路径检查和独立 clean attack audit（97/97 PASS、0 FAIL、0 路径污染）取代了此前 `final-governance-closeout` 的证据拒绝；旧结论保留为历史证据，不再代表当前裁决。源码合并、Mozilla 签名/发布与永久安装核验仍是三个独立状态；当前仅永久安装核验待完成。
 
 可以在 Firefox 的 `about:addons` 中安装，或直接用 Firefox 打开这个 `.xpi` 文件。这个方式适合长期安装。
 

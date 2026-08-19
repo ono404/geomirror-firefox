@@ -4,12 +4,12 @@
 
 - None.
 
-## Current acceptance and release state (2026-08-18)
+## Current acceptance and release state (2026-08-19)
 
 - **PRODUCT: ACCEPT WITH PLATFORM LIMITATIONS.** The frozen Firefox 153.0.4 runs and functional matrix passed; no new product repair was required in v4.
 - **EVIDENCE: ACCEPT.** The current authority is `final-callable-closure-v4/REPORT-v4.md` plus the independent clean audit: 97/97 PASS, 0 FAIL, 0 path pollution.
-- Accepted product source baseline `1.2.5` is `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969` in open PR #6; subsequent commits through the pre-neat-freak head `1e0d4ce6e9f300933bed23fe4d865b64c0b437d9` are documentation-only closeout. Its Firefox CI completed successfully.
-- **No product blocker. Release authorization is still pending:** PR #6 is not merged, and `1.2.5` is not Mozilla-signed, published, or permanently installed. The last signed/installed release remains `1.2.4`.
+- Accepted product source baseline `1.2.5` is `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`; PR #6 merged to `my-private/main` at `aca0631d3e7fe02a5ac23c59028855259d99f8d6`, with PR and merged-main Firefox CI successful.
+- **No product or signing blocker.** Mozilla signed the unlisted `1.2.5` package on 2026-08-19: `web-ext-artifacts/df5a29cf0eba47f89263-1.2.5.xpi`, SHA-256 `d9f5d61f34d089b08c4b94a7f4571533e2bc340de54c1cb62ae58e76fe29edfd`. Permanent-profile installation verification remains pending and is not implied by signing/publication.
 - The 2026-08-16 `final-governance-closeout` EVIDENCE REJECT below is historical and superseded by the v4 frozen evidence plus clean audit; it is retained for auditability, not as the current verdict.
 
 ## final-callable-closure round (2026-08-16) — no product blockers; harness limitations recorded

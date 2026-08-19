@@ -1,11 +1,11 @@
 # GeoMirror Firefox current status
 
-## 当前权威状态（2026-08-18，neat-freak 知识收口）
+## 当前权威状态（2026-08-19，Firefox 1.2.5 正式签名发布）
 
-- 源码候选版本 `1.2.5`，已验收产品源码基线 `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`；分支 `agent/release-firefox-1.2.5` 在 neat-freak 前的远端 head 为文档收口提交 `1e0d4ce6e9f300933bed23fe4d865b64c0b437d9`。开放 PR #6 的 Firefox CI `completed/success`；本轮只会以文档提交继续推进 head，不改变产品树。
+- 版本 `1.2.5` 的已验收产品源码基线为 `c8d9d6a00d6451e0aa7dbca2d501ef2b76128969`；PR #6 已合入 `my-private/main`，merge commit 为 `aca0631d3e7fe02a5ac23c59028855259d99f8d6`，PR 与 merged-main Firefox CI 均通过。
 - 最终裁决：**PRODUCT ACCEPT WITH PLATFORM LIMITATIONS**；**EVIDENCE ACCEPT**。现役证据为 `final-callable-closure-v4/REPORT-v4.md` 与 `final-callable-closure-v4-clean-audit/CLEAN-AUDIT-REPORT.md`；clean audit 97/97 PASS、0 FAIL、0 路径污染。
-- 产品源码在 v4/clean-audit 阶段 diff=0；本轮 neat-freak 只同步 README、技术说明、交接与状态文档，不改变扩展行为。
-- 发布状态严格分离：候选源码已推送且 PR/CI 通过，但**尚未 merge、Mozilla 签名、发布或永久安装**；最后已签名/已安装版本仍为 `1.2.4`。
+- Mozilla 已于 2026-08-19 通过 unlisted 渠道签名 `web-ext-artifacts/df5a29cf0eba47f89263-1.2.5.xpi`；SHA-256 `d9f5d61f34d089b08c4b94a7f4571533e2bc340de54c1cb62ae58e76fe29edfd`。签名、manifest 1.2.5、Firefox-only 文件形状与 17 文件 payload 已核验。
+- 发布状态严格分离：源码已合并，签名 XPI 随本发布提交进入 GitHub 规范制品目录；**永久 Firefox profile 安装与 active/signedState/hash 核验尚未执行**，不得据此声称已安装。
 - 下文 2026-08-16 的 `final-governance-closeout` EVIDENCE REJECT 是旧证据链的历史裁决，已被 2026-08-18 的冻结 b1、异步语义裁决与独立 clean audit 取代，不再是当前结论。
 
 ## 本轮：1.2.5 最终安全收口核实（final-callable-closure，2026-08-16 开工回执）

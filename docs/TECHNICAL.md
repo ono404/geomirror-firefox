@@ -16,11 +16,11 @@ The extension currently spoofs:
 - outgoing `Accept-Language` header via Chrome `declarativeNetRequest`
 - Chinese system/vendor font availability for non-Chinese exit profiles
 
-## Acceptance state (2026-08-18)
+## Acceptance and release state (2026-08-19)
 
-The accepted `1.2.5` product source baseline is `c8d9d6a` in open PR #6;
-subsequent commits through `1e0d4ce` are documentation-only closeout. Its
-Firefox CI passed. The final verdict is PRODUCT ACCEPT with the documented
+The accepted `1.2.5` product source baseline is `c8d9d6a`; PR #6 merged it to
+`my-private/main` at `aca0631d`, and both PR and merged-main Firefox CI passed.
+The final verdict is PRODUCT ACCEPT with the documented
 Firefox platform limitations and EVIDENCE ACCEPT. The evidence authority is
 `../evidence/firefox-security-1.2.5/final-callable-closure-v4/`, supplemented
 by `../evidence/firefox-security-1.2.5/final-callable-closure-v4-clean-audit/`:
@@ -28,9 +28,11 @@ single frozen batch b1, run-local source and harness snapshots, strict
 asynchronous permission-path semantics, and an independent clean attack audit
 with 97/97 PASS, 0 FAIL, and 0 path pollution. This supersedes the 2026-08-16
 `final-governance-closeout` EVIDENCE REJECT, which remains a historical record
-of the weaker evidence chain. The candidate is not yet merged, signed,
-published, or installed. The last formal release is `1.2.4`; remaining steps
-are authorized merge → Mozilla signing → permanent-install verification.
+of the weaker evidence chain. Mozilla signed the unlisted canonical package
+`web-ext-artifacts/df5a29cf0eba47f89263-1.2.5.xpi` on 2026-08-19 (SHA-256
+`d9f5d61f34d089b08c4b94a7f4571533e2bc340de54c1cb62ae58e76fe29edfd`).
+Source merge and signing/publication are complete; permanent-profile
+installation verification is still pending and remains a separate state.
 
 ## Runtime flow
 
