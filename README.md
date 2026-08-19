@@ -172,21 +172,16 @@ Note: temporary add-ons disappear when Firefox restarts. This is the recommended
 A signed unlisted Firefox package can be installed permanently:
 
 ```text
-web-ext-artifacts/df5a29cf0eba47f89263-1.2.4.xpi
+web-ext-artifacts/df5a29cf0eba47f89263-1.2.5.xpi
 ```
 
-The signed `1.2.4` package contains the accepted Firefox source from `main`,
-including the `Accept-Language` failure/coherence fix. It was signed through
-Mozilla's unlisted channel and verified in a permanent Firefox profile.
-GitHub source updates still do not update an installed XPI automatically.
-
-The repository source candidate is currently at **version `1.2.5`** (page-realm
-callable trust boundary + captured-`Promise.resolve`-member fix + cross-realm
-consistency fixes). Accepted product source baseline `c8d9d6a` is in open PR #6;
-later commits through `1e0d4ce` are documentation-only closeout, and the PR's
-Firefox CI passed. It has not been merged, signed, published, or installed; the last
-signed/installed version remains `1.2.4`. Merge, signing, and installation are
-separate, explicitly authorized release steps.
+The signed `1.2.5` package contains the accepted Firefox source merged to
+`main` at `aca0631d`, including the page-realm callable trust-boundary,
+captured-`Promise.resolve`-member, cross-realm consistency, and final wrapper
+call-time lookup fixes. Mozilla signs it through the unlisted channel. This
+package is published as the canonical repository artifact but has not yet been
+verified in a permanent Firefox profile. GitHub source updates still do not
+update an installed XPI automatically.
 
 Final acceptance state of the `1.2.5` source candidate (2026-08-18; full text
 under `../evidence/firefox-security-1.2.5/final-callable-closure-v4/` and
@@ -195,8 +190,9 @@ PRODUCT ACCEPT with the documented Firefox platform limitations, and EVIDENCE
 ACCEPT. The frozen batch-b1 runs, asynchronous permission-path checks, and an
 independent clean attack audit (97/97 PASS, 0 FAIL, 0 path pollution) supersede
 the earlier `final-governance-closeout` evidence rejection, which remains
-historical evidence rather than the current verdict. The remaining release
-steps are: authorized merge → Mozilla signing → permanent-install verification.
+historical evidence rather than the current verdict. Source merge, Mozilla
+signing/publication, and permanent-install verification remain separate release
+states; only permanent-install verification is still pending.
 
 You can install it from Firefox Add-ons Manager (`about:addons`) or by opening the `.xpi` in Firefox.
 
